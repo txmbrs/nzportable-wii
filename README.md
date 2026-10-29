@@ -15,13 +15,7 @@ The single player port and the experimental FTE online client are separate execu
 
 **Online gameplay does not work yet.** The client can retrieve and display
 servers and establish an initial connection, but joining a playable game is
-still failing. Loading may reach the map stage and then time out. Do not
-interpret a â€śConnectedâ€ť message as successful entry into gameplay. Cooperation
-is under development and is not advertised as a working feature.
-
-PC reference tests passed connection and signon over UDP, WebSocket and WebRTC
-using the official PC client. They do not establish that the Wii port works.
-
+still failing. 
 ## Downloads
 
 Release version: **0.1**. Download updates from
@@ -36,9 +30,6 @@ locally for each console and is never included in a public download.
 
 The existing installation uses `apps/nzportable/boot.dol` for single player and
 `apps/nzportable/online/client.dol` for the experimental online client on SD/USB.
-Files can be transferred over FTP. Keep the game data, configuration and private
-TLS seed when replacing an executable. Never publish a console's TLS seed.
-The ELF file is for debugging and does not need to be installed on Wii.
 
 ## Source and building
 
