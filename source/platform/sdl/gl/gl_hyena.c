@@ -592,10 +592,18 @@ Hyena_UpdateBuffer(hyena_buffer_t * buffer, const void * data, size_t size)
     // Static storage owns its bytes; streamed indices keep the caller's frame allocation.
     buffer->owned = buffer->target == HYE_ARRAY_BUFFER;
     if (buffer->owned) {
+#ifdef PLATFORM_WII
+        /* OpenGX's glBufferData reads its rounded allocation size, including
+         * the final partial cache line. Keep our source equally padded. */
+        if (size > (size_t)-1 - 31)
+            Sys_Error("Hyena_UpdateBuffer: size overflow");
+        buffer->data = calloc(1, (size + 31) & ~(size_t)31);
+#else
         buffer->data = malloc(size);
+#endif
         if (!buffer->data)
             Sys_Error("Hyena_UpdateBuffer: out of memory");
-        memcpy(buffer->data, data, size);
+        if (data) memcpy(buffer->data, data, size);
     } else {
         buffer->data = (void *) data;
     }
@@ -718,22 +726,50 @@ Hyena_EndLightmapped(void)
 void
 Hyena_UploadStaticWorldBuffer(hyena_buffer_t * buffer)
 {
-    /* Immutable world and model-UV arrays use this path. OpenGX owns and flushes its
-     * aligned GX storage; discard the staging copy after glBufferData. */
+    GLenum error = GL_NO_ERROR, prior = GL_NO_ERROR, pending;
+    const char *stage = "generate";
+    unsigned prior_count = 0;
+    static unsigned successes;
     if (!buffer || buffer->object || !buffer->owned || !buffer->size)
         return;
+    /* GL errors persist until read. A pre-existing error must not classify a
+     * successful VBO upload as failed. Preserve it in diagnostics separately. */
+    while ((pending = glGetError()) != GL_NO_ERROR && prior_count < 8) {
+        if (!prior_count) prior = pending;
+        ++prior_count;
+    }
     glGenBuffers(1, &buffer->object);
-    if (!buffer->object)
-        Sys_Error("Hyena: cannot create world VBO");
-    glBindBuffer(GL_ARRAY_BUFFER, buffer->object);
-    glBufferData(GL_ARRAY_BUFFER, buffer->size, buffer->data, GL_STATIC_DRAW);
+    error = glGetError();
+    if (!buffer->object && error == GL_NO_ERROR) error = GL_OUT_OF_MEMORY;
+    if (error == GL_NO_ERROR) {
+        stage = "bind";
+        glBindBuffer(GL_ARRAY_BUFFER, buffer->object);
+        error = glGetError();
+    }
+    if (error == GL_NO_ERROR) {
+        stage = "upload";
+        glBufferData(GL_ARRAY_BUFFER, buffer->size, buffer->data, GL_STATIC_DRAW);
+        error = glGetError();
+    }
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-    if (glGetError() != GL_NO_ERROR) {
-        glDeleteBuffers(1, &buffer->object);
+    pending = glGetError();
+    if (error == GL_NO_ERROR && pending != GL_NO_ERROR) {
+        stage = "unbind";
+        error = pending;
+    }
+    if (prior_count)
+        Sys_Printf("Wii VBO: prior GL error 0x%x (%u pending) before %u-byte upload\n",
+            (unsigned)prior, prior_count, (unsigned)buffer->size);
+    if (error != GL_NO_ERROR) {
+        if (buffer->object) glDeleteBuffers(1, &buffer->object);
         buffer->object = 0;
-        Sys_Printf("World VBO upload failed; retaining client array\n");
+        Sys_Printf("Wii VBO: %s failed, GL error 0x%x, %u bytes; retaining client array\n",
+            stage, (unsigned)error, (unsigned)buffer->size);
         return;
     }
+    if (++successes <= 4 || buffer->size >= 65536)
+        Sys_Printf("Wii VBO: uploaded %u bytes, object %u\n",
+            (unsigned)buffer->size, (unsigned)buffer->object);
     free(buffer->data);
     buffer->data = NULL;
     buffer->owned = false;
