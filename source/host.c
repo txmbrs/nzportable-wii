@@ -20,6 +20,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // host.c -- coordinates spawning and killing of local servers
 
 #include "nzportable_def.h"
+#ifdef PLATFORM_WII
+#include "platform/wii/perf_wii.h"
+#endif
 
 #ifdef PLATFORM_SDL
 extern qboolean sdl_running;
@@ -218,6 +221,9 @@ void Host_InitLocal (void)
 
 	Cvar_RegisterVariable (&host_framerate);
 	Cvar_RegisterVariable (&host_speeds);
+#ifdef PLATFORM_WII
+    Wii_PerfInit();
+#endif
 	Cvar_RegisterVariable (&vid_renderer);
 
 	Cvar_RegisterVariable (&sys_ticrate);
@@ -617,7 +623,15 @@ void Host_ServerFrame (void)
 // move things around and think
 // always pause in single player if in console or menus
 	if (!sv.paused && !LoadingScreen_IsWaiting() && (svs.maxclients > 1 || key_dest == key_game || Test_Pathfind_Active()) )
-		SV_Physics ();
+    {
+#ifdef PLATFORM_WII
+        double start = Wii_PerfClock();
+#endif
+        SV_Physics ();
+#ifdef PLATFORM_WII
+        Wii_PerfAdd(WII_PERF_PHYSICS,start);
+#endif
+    }
 
 // send all messages to the clients
 	SV_SendClientMessages ();
@@ -653,6 +667,10 @@ void _Host_Frame (float time)
 		return;			// don't run too fast, or packets will flood out
 	}
 
+#ifdef PLATFORM_WII
+    Wii_PerfBeginFrame();
+    double perf_start;
+#endif
 // get new key events
 	Sys_SendKeyEvents ();
 #ifdef PLATFORM_WII
@@ -684,8 +702,14 @@ void _Host_Frame (float time)
 
 // check for commands typed to the host
 	Host_GetConsoleCommands ();
+#ifdef PLATFORM_WII
+    perf_start = Wii_PerfClock();
+#endif
 	if (sv.active)
 		Host_ServerFrame ();
+#ifdef PLATFORM_WII
+    Wii_PerfAdd(WII_PERF_SERVER,perf_start);
+#endif
 #ifdef PLATFORM_SDL
 	if (!sdl_running)
 		return;
@@ -703,17 +727,28 @@ void _Host_Frame (float time)
 
 	host_time += host_frametime;
 
+#ifdef PLATFORM_WII
+    perf_start = Wii_PerfClock();
+#endif
 // fetch results from server
 	if (cls.state == ca_connected)
 	{
 		CL_ReadFromServer ();
 	}
+#ifdef PLATFORM_WII
+    Wii_PerfAdd(WII_PERF_CLIENT,perf_start);
+    perf_start = Wii_PerfClock();
+#endif
 // update video
 	if (host_speeds.value)
 		time1 = Sys_FloatTime ();
 	SCR_UpdateScreen ();
 	if (host_speeds.value)
 		time2 = Sys_FloatTime ();
+#ifdef PLATFORM_WII
+    Wii_PerfAdd(WII_PERF_SCREEN,perf_start);
+    perf_start = Wii_PerfClock();
+#endif
 // update audio
 	if (cls.signon == SIGNONS)
 	{
@@ -725,6 +760,9 @@ void _Host_Frame (float time)
 
 	Music_Update();
 	LoadingScreen_Update();
+#ifdef PLATFORM_WII
+    Wii_PerfAdd(WII_PERF_AUDIO,perf_start);
+#endif
 
 	if (host_speeds.value)
 	{
@@ -740,6 +778,9 @@ void _Host_Frame (float time)
 	// if ((host_framecount % 120) == 0) Con_Printf ("%.2fkB free \n", pspSdkTotalFreeUserMemSize()/1024.f);
 
 	host_framecount++;
+#ifdef PLATFORM_WII
+    Wii_PerfEndFrame();
+#endif
 }
 
 

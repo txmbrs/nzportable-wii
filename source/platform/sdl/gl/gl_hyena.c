@@ -718,7 +718,7 @@ Hyena_EndLightmapped(void)
 void
 Hyena_UploadStaticWorldBuffer(hyena_buffer_t * buffer)
 {
-    /* Only immutable world arrays use this path. OpenGX owns and flushes its
+    /* Immutable world and model-UV arrays use this path. OpenGX owns and flushes its
      * aligned GX storage; discard the staging copy after glBufferData. */
     if (!buffer || buffer->object || !buffer->owned || !buffer->size)
         return;
@@ -737,6 +737,27 @@ Hyena_UploadStaticWorldBuffer(hyena_buffer_t * buffer)
     free(buffer->data);
     buffer->data = NULL;
     buffer->owned = false;
+}
+/* Optional immutable UV storage; no streaming write can race the GPU.
+ * OpenGX rounds glBufferData's source read to 32 bytes, so pad staging too. */
+hyena_buffer_t *
+Hyena_TryCreateStaticArray(const void *data, size_t size)
+{
+    hyena_buffer_t *buffer;
+    size_t padded;
+    if (!data || !size || size > (size_t)-1 - 31) return NULL;
+    padded = (size + 31) & ~(size_t)31;
+    buffer = calloc(1, sizeof(*buffer));
+    if (!buffer) return NULL;
+    buffer->data = calloc(1, padded);
+    if (!buffer->data) { free(buffer); return NULL; }
+    memcpy(buffer->data, data, size);
+    buffer->size = size;
+    buffer->target = HYE_ARRAY_BUFFER;
+    buffer->owned = true;
+    Hyena_UploadStaticWorldBuffer(buffer);
+    if (!buffer->object) { Hyena_DestroyBuffer(buffer); return NULL; }
+    return buffer;
 }
 #endif
 

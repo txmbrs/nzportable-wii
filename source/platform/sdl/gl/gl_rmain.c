@@ -20,6 +20,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // r_main.c
 
 #include "../../../nzportable_def.h"
+#ifdef PLATFORM_WII
+#include "../../../platform/wii/perf_wii.h"
+#endif
 
 entity_t	r_worldentity;
 
@@ -1609,8 +1612,12 @@ void R_RenderScene (void)
 #ifdef PLATFORM_WII
     if (r_speeds.value >= 2) start = Sys_FloatTime();
 #endif
+#ifdef PLATFORM_WII
+    double entity_start = Wii_PerfClock();
+#endif
 	R_DrawEntitiesOnList ();
 #ifdef PLATFORM_WII
+    Wii_PerfAdd(WII_PERF_ENTITIES,entity_start);
     if (r_speeds.value >= 2) profile_entity_seconds += Sys_FloatTime() - start;
 #endif
 

@@ -1,4 +1,7 @@
 #include "../../../nzportable_def.h"
+#ifdef PLATFORM_WII
+#include "../../../platform/wii/perf_wii.h"
+#endif
 #include "../sdl_local.h"
 #ifdef PLATFORM_WII
 #include <gccore.h>
@@ -158,7 +161,13 @@ void GL_EndRendering(void)
           wii_image_smoothing.value != 0, low_filter);
     }
 #endif
+#ifdef PLATFORM_WII
+    double present_start = Wii_PerfClock();
+#endif
 	SDL_GL_SwapWindow(sdl_window);
+#ifdef PLATFORM_WII
+    Wii_PerfAdd(WII_PERF_PRESENT,present_start);
+#endif
 }
 
 void VID_SetPalette(unsigned char *palette)

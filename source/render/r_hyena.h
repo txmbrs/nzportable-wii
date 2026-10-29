@@ -143,6 +143,7 @@ Hyena_CreateBuffer(int target, const void * data, size_t size);
 
 #ifdef PLATFORM_WII
 void Hyena_UploadStaticWorldBuffer(hyena_buffer_t * buffer);
+hyena_buffer_t *Hyena_TryCreateStaticArray(const void *data, size_t size);
 qboolean Hyena_CanCombineLightmaps(void);
 void Hyena_BeginLightmapped(int texture, const hyena_array_t *uv);
 void Hyena_EndLightmapped(void);

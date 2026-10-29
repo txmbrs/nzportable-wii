@@ -25,6 +25,10 @@
 
 typedef struct {
     short *                positions;
+#ifdef PLATFORM_WII
+    hyena_buffer_t *        uv_buffer;
+    qboolean               pose_cache_hit;
+#endif
     const float *          uvs;
     const unsigned short * indices;
     int                    num_vertices;
