@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<app version="1">
+  <name>NZPortable Wii</name>
+  <coder>NZP Team and contributors / txmbrs Wii port</coder>
+  <version>0.1</version>
+  <short_description>NZPortable single player; experimental online</short_description>
+  <long_description>Unofficial Wii port of Nazi Zombies: Portable, originally made by NZP Team and contributors. Uses existing game data. Online gameplay does not work yet: server browsing and initial connections work, but joining a playable game is incomplete.</long_description>
+  <ahb_access/>
+</app>

@@ -1,0 +1,782 @@
+/*
+	server/clientfuncs.qc
+
+	used for any sort of down, hit, etc that the player or entity 
+	experiences
+
+	Copyright (C) 2021-2024 NZ:P Team
+
+	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation; either version 2
+	of the License, or (at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+	See the GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to:
+
+		Free Software Foundation, Inc.
+		59 Temple Place - Suite 330
+		Boston, MA  02111-1307, USA
+
+*/
+void (float achievement_id, optional entity who) GiveAchievement;
+void(entity client) LastStand_Begin;
+void() Gamemode_GetUp;
+void(entity attacker, float death_style) Gamemode_DieHandler;
+float(float current_earned_score, float damage_style) Gamemode_ScoreForDamage;
+float(float current_health_delay, float current_perks) Gamemode_GetHealthRegenDelayForPlayer;
+
+#define DMG_SCORE_HEADSHOT		100 	// Death by Headshot
+#define DMG_SCORE_MELEE			130		// Death by Melee
+#define DMG_SCORE_UPPERTORSO	60		// Death by gunshot, upper torso.
+#define DMG_SCORE_LOWERTORSO	50 		// Death by gunshot, lower torso.
+#define DMG_SCORE_GRENADE		50 		// Death by Grenade.
+#define DMG_SCORE_EXPLOSIVE		60  	// Death by Explosive Weapon.
+#define DMG_SCORE_TESLA			50  	// Death by Tesla.
+#define DMG_SCORE_FLOPPER		50		// Death by PhD Flopper
+#define DMG_SCORE_STDDAMAGE		10  	// Standard Damage reward.
+
+#define SCORE_CW_KILL				115
+#define SCORE_CW_REGULAR_KILL		90
+
+#define SCORE_BO4_HEALTH_THRESHOLD		10
+#define SCORE_BO4_MAX_PER_ZOMBIE		90
+#define SCORE_BO4_BONUS_HEADSHOT		30
+#define SCORE_BO4_BONUS_MELEE			60
+
+//
+// ScoreSystem_ScoreForDamage(current_earned_score, damage_style)
+// Applies score rules which do not need to track the damaged zombie.
+//
+float(float current_earned_score, float damage_style) ScoreSystem_ScoreForDamage =
+{
+	if (game_modifiers.gameplay.ai.score_system != SCORE_SYSTEM_CW)
+		return current_earned_score;
+
+	if (current_earned_score == DMG_SCORE_STDDAMAGE)
+		return 0;
+
+	if (damage_style == DMG_TYPE_HEADSHOT || damage_style == DMG_TYPE_MELEE)
+		return SCORE_CW_KILL;
+
+	return SCORE_CW_REGULAR_KILL;
+};
+
+//
+// ScoreSystem_BO4DamageScore(victim, damage)
+// Awards 10 points for each 10% health threshold 
+// crossed by incoming damage.
+//
+float(entity victim, float damage, float lethal) ScoreSystem_BO4DamageScore =
+{
+	if (damage <= 0 || victim.max_health <= 0)
+		return 0;
+
+	float old_threshold = floor(((victim.max_health - victim.health) * 10 / victim.max_health) + 0.0001);
+	float health_after = lethal ? 0 : victim.health - damage;
+	float new_threshold = floor(((victim.max_health - health_after) * 10 / victim.max_health) + 0.0001);
+	old_threshold = clamp(old_threshold, 0, SCORE_BO4_MAX_PER_ZOMBIE / SCORE_BO4_HEALTH_THRESHOLD);
+	new_threshold = clamp(new_threshold, 0, SCORE_BO4_MAX_PER_ZOMBIE / SCORE_BO4_HEALTH_THRESHOLD);
+	return (new_threshold - old_threshold) * SCORE_BO4_HEALTH_THRESHOLD;
+};
+
+//
+// ScoreSystem_BO4KillBonus(damage_style)
+// Awards a bonus when the corresponding damage 
+// type lands the final blow.
+//
+float(float damage_style) ScoreSystem_BO4KillBonus =
+{
+	switch (damage_style) {
+		case DMG_TYPE_HEADSHOT:
+			return SCORE_BO4_BONUS_HEADSHOT;
+		case DMG_TYPE_MELEE:
+			return SCORE_BO4_BONUS_MELEE;
+		default:
+			return 0;
+	}
+
+	return 0;
+};
+
+void() Barrel_Hit;
+void() teddy_react;
+
+void() Do_Restart =
+{
+	localcmd("restart\n");
+};
+
+// Fade to black function, creates another think for restart
+void() EndGame_FadePrompt =
+{
+	entity players = find(world, classname, "player");
+	while(players != world) {
+		nzp_screenflash(players, SCREENFLASH_COLOR_BLACK, 5, SCREENFLASH_FADE_IN);
+		players = find(players, classname, "player");
+	}
+
+#ifdef FTE
+
+	self.think = MapRotation_Decide;
+
+#else
+
+	self.think = Do_Restart;
+
+#endif // FTE
+
+	self.nextthink = time + 5;
+}
+
+//Actual endgame function, all zombies die, music plays
+void() EndGame =
+{
+	entity old_self;
+	entity who = find(world,classname,"ai_zombie");
+	while(who != world)
+	{
+		if(who.health)
+		{
+			old_self = self;
+			self = who;
+			self.th_die();
+			self = old_self;
+		}
+		
+		who = find(who,classname,"ai_zombie");
+	}
+	
+	self.think = EndGame_FadePrompt;
+	self.nextthink = time + 28;
+}
+
+// when dead and other players exist and are alive, throw user into spectate mode
+void() startspectate =
+{
+	if (!self.downed)
+		return;
+		
+	if (self.beingrevived)
+	{
+		self.think = startspectate;
+		self.nextthink = time + 0.1;
+		return;
+	}
+	
+	self.downedloop = 0;
+	self.beingrevived = false;
+	self.health = 100;
+	self.weaponmodel = "";
+	self.weapon2model = "";
+	self.downed = 0;
+	self.frame = 0;
+	
+	if (player_count > 1)
+		SpectatorSpawn();
+}
+
+// searches for players that are alive given which clients have which playernumbers
+//      Returns 1 if there IS someone in the world that's not downed
+float() PollPlayersAlive = 
+{
+	entity players = find(world, classname, "player");
+
+	while(players != world) {
+		if (!players.downed)
+			return 1;
+
+		players = find(players, classname, "player");
+	}
+
+	return 0;
+}
+
+// Endgamesetup -- think function for setting up the death of everyone
+void() EndGameSetup =
+{
+	entity gameover_watcher = spawn();
+	gameover_watcher.think = EndGame;
+	gameover_watcher.nextthink = time + 4;
+	gameover_watcher.classname = "gameover_watcher";
+
+	entity players = find(world, classname, "player");
+	while(players != world) {
+		players.health = 0;
+		players.weapon = 0;
+		players.currentammo = 0;
+		players.currentmag = 0;
+		players.weaponmodel = "";
+		players.weapon2model = "";
+		players.animend = SUB_Null;
+		players.perks = 0;
+		players.movetype = MOVETYPE_TOSS;
+		players.velocity = '0 0 0';
+
+		Player_RemoveScore(players, players.points);
+		Player_AddScore(players, players.score, false);
+
+		players = find(players, classname, "player");
+	}
+
+	if (in_endgame_sequence == false) {
+		Rounds_PlayTransition(game_modifiers.gameplay.rounds.sounds.game_over);
+		NotifyGameEnd();
+	}
+
+	in_endgame_sequence = true;
+	Player_RemoveScore(self, self.points);
+	Player_AddScore(self, self.score, false);
+	for (float i = 0; i < MAX_PLAYER_WEAPONS; ++i)
+	{
+		Weapon_RemoveWeapon(0);
+	}
+  return;
+}
+
+void () GetUp =
+{	
+	// Play Getting Up Animation
+	PAnim_GetUp();
+
+	Player_SetStance(self, PLAYER_STANCE_STAND, false);
+
+	// Bad hack: if we're crouching, just play some dummy crouchwalk frames.
+	if (self.stance == PLAYER_STANCE_CROUCH)
+		PAnim_CrouchWalk7();
+	
+	self.health = 100;
+	self.downedloop = 0;		// used for death timing vs endgame
+	self.downed = 0;
+	self.classname = "player";
+
+	// Take away the ammo that was fired while in last stand.
+	if (self.weapon != W_COLT) {
+		if (self.weapon == self.weaponbk) {
+			self.currentammobk -= self.teslacount;
+
+			// Take from the mag if the reserve is empty now
+			if (self.currentammobk < 0) {
+				self.currentmagbk += self.currentammobk;
+				self.currentammobk = 0;
+			}	
+		} else if (self.weapon == self.weapons[1].weapon_id) {
+			self.weapons[1].weapon_reserve -= self.teslacount;
+
+			// Take from the mag if the reserve is empty now
+			if (self.weapons[1].weapon_reserve < 0) {
+				self.weapons[0].weapon_magazine += self.weapons[1].weapon_reserve;
+				self.weapons[1].weapon_reserve = 0;
+			}
+		}
+	}
+	
+	self.teslacount = 0;
+
+	Weapon_AssignWeapon(0, self.weaponbk, self.currentmagbk, self.currentammobk, self.tierbk, true);
+	Gamemode_GetUp();
+};
+
+// poll checking whether to see if our revive invoke is active
+void(entity ent) CheckRevive =
+{
+	if (self.invoke_revive) {
+		GetUp();
+		DisableReviveIcon(self.playernum);
+		self.invoke_revive = 0;
+		self.firer = world;
+	}
+}
+
+void(entity attacker, float d_style) DieHandler =
+{
+	if (cvar("sv_headshotonly") == 1 && d_style != DMG_TYPE_HEADSHOT && self.classname == "ai_zombie")
+		return;
+
+    float t;
+
+    t = random();
+
+    if (self.classname == "ai_zombie" || self.classname == "ai_dog") {
+        self.th_die();
+    }
+
+    if (attacker.classname == "player") {
+		attacker.kills++;
+		nzp_hitmarker(attacker, true);
+
+		float points_earned = 0;
+		switch(d_style) {
+			case DMG_TYPE_HEADSHOT:
+				points_earned = DMG_SCORE_HEADSHOT;
+				attacker.headshots++;
+				break;
+			case DMG_TYPE_MELEE:
+				points_earned = DMG_SCORE_MELEE;
+				break;
+			case DMG_TYPE_TESLA:
+				points_earned = DMG_SCORE_GRENADE;
+				break;
+			case DMG_TYPE_FLAMETHROWER:
+				points_earned = DMG_SCORE_GRENADE;
+
+				// override their death sound (FIXME: make a new sound..)
+				Sound_PlaySound(self, game_modifiers.gameplay.powerups.sounds.drop, SOUND_TYPE_ZOMBIE_LOUD, SOUND_PRIORITY_PLAYALWAYS);
+				break;
+			case DMG_TYPE_GRENADE:
+				points_earned = DMG_SCORE_GRENADE;
+				break;
+			case DMG_TYPE_EXPLOSIVE:
+				points_earned = DMG_SCORE_EXPLOSIVE;
+				break;
+			case DMG_TYPE_LOWERTORSO:
+				points_earned = DMG_SCORE_LOWERTORSO;
+				break;
+			case DMG_TYPE_UPPERTORSO:
+				points_earned = DMG_SCORE_UPPERTORSO;
+				break;
+			case DMG_TYPE_FLOPPER:
+				points_earned = DMG_SCORE_FLOPPER;
+				break;
+			default:
+				if (cvar("developer"))
+					bprint(PRINT_HIGH, "DieHandler: Received invalid style\n");
+				break;
+		}
+
+		if (cvar("sv_difficulty") == 3)
+			points_earned = floor((points_earned/10) * 0.75) * 10;
+
+		if (game_modifiers.gameplay.ai.score_system == SCORE_SYSTEM_BO4)
+			points_earned = ScoreSystem_BO4KillBonus(d_style);
+		else
+			points_earned = ScoreSystem_ScoreForDamage(points_earned, d_style);
+
+		Player_AddScore(attacker, Gamemode_ScoreForDamage(points_earned, d_style), true);
+
+		Gamemode_DieHandler(attacker, d_style);
+    }
+}
+
+void(entity victim, entity attacker, float damage, float d_style) DamageHandler = {
+	if (cvar("sv_headshotonly") == 1 && d_style != DMG_TYPE_HEADSHOT && victim.classname == "ai_zombie")
+		return;
+
+	// don't do any attacking during nuke delay
+	if (d_style == DMG_TYPE_ZOMBIESWIPE && nuke_powerup_active > time)
+		return;
+
+	entity old_self;
+	if (victim.classname == "ai_zombie" || victim.classname == "ai_dog") {
+		if (victim.max_health <= 0)
+			victim.max_health = victim.health;
+
+		float lethal = (victim.health - damage) <= 0 || instakill_finished > time;
+		if (attacker.classname == "player" && (d_style != DMG_TYPE_OTHER && game_modifiers.gameplay.ai.score_system == SCORE_SYSTEM_BO4 || !lethal)) {
+			float points_earned;
+
+			if (game_modifiers.gameplay.ai.score_system == SCORE_SYSTEM_BO4)
+				points_earned = ScoreSystem_BO4DamageScore(victim, damage, lethal);
+			else
+				points_earned = ScoreSystem_ScoreForDamage(DMG_SCORE_STDDAMAGE, d_style);
+			
+				Player_AddScore(attacker, Gamemode_ScoreForDamage(points_earned, d_style), true);
+			
+			if (!lethal) 
+				nzp_hitmarker(attacker, false);
+        }
+
+		victim.health = victim.health - damage;
+
+		if ((d_style == DMG_TYPE_EXPLOSIVE || d_style == DMG_TYPE_GRENADE) && damage > 0) {
+			if (!lethal && victim.crawling == 2) {
+				makeCrawler(victim);
+				GiveAchievement(3, attacker);
+			}
+		}
+
+		if (victim.health <= 0 || instakill_finished > time) {
+			old_self = self;
+			self = victim;
+			DieHandler(attacker, d_style);
+			self = old_self;
+		}
+	} else if (victim.classname == "player" && !victim.downed) {
+
+		if (victim.flags & FL_GODMODE) {
+			return;
+		}
+
+		// Abstinence Program
+		victim.ach_tracker_abst = 1;
+		
+		victim.health -= damage;
+
+		// Determine how long to wait before regenerating based on our Health ratio
+		float ratio = victim.health / victim.max_health;
+		float health_delay_s = 0;
+
+		// Badly hurt = longer delay.
+		if (ratio <= 0.2) {
+			health_delay_s = game_modifiers.gameplay.player.health_regeneration.regeneration_delay_heavy_damage;
+
+			// We're really low, so let's regen REALLY slow.
+			victim.health_was_very_low = true;
+		} else {
+			health_delay_s = game_modifiers.gameplay.player.health_regeneration.regeneration_delay_light_damage;
+		}
+
+		health_delay_s = Gamemode_GetHealthRegenDelayForPlayer(health_delay_s, victim.perks);
+		if (victim.perks & P_REVIVE)
+			health_delay_s /= game_modifiers.gameplay.perksacola.perk_quickrevive_health_regeneration_multiplier;
+
+		victim.health_delay = time + health_delay_s;
+
+		// shake the camera on impact
+		vector distance;
+		distance = attacker.angles - victim.angles;
+
+		// just to prevent radical punchangles
+		while(distance_x > 10 || distance_x < -10) {
+			distance_x /= 2;
+		}
+		while(distance_y > 10 || distance_y < -10) {
+			distance_y /= 2;
+		}
+
+		// apply
+		victim.punchangle_x = distance_x;
+		victim.punchangle_y = distance_y;
+
+		// Play pain noise if this isn't done by an electric barrier.
+		if (d_style != DMG_TYPE_ELECTRICTRAP) {
+			Sound_PlaySound(victim, "sounds/player/pain4.wav", SOUND_TYPE_PLAYER_VOICE, SOUND_PRIORITY_PLAYALWAYS);
+		} else {
+			Sound_PlaySound(victim, "sounds/machines/elec_shock.wav", SOUND_TYPE_PLAYER_VOICE, SOUND_PRIORITY_PLAYALWAYS);
+		}
+
+		if (victim.sprinting) {
+			old_self = self;
+			self = victim;
+			W_SprintStop();
+			self = old_self;
+		}
+
+		victim.sprint_delay = time + 0.75;
+
+		// Was 20 for.. some reason.
+		if (victim.health <= 1)
+		{
+			LastStand_Begin(victim);
+		}
+	}
+}
+
+/*
+============
+CanDamage
+
+Returns true if the inflictor can directly damage the target.  Used for
+explosions and melee attacks.
+============
+*/
+float(entity targ, entity inflictor) CanDamage =
+{
+	if (targ.flags == FL_GODMODE)
+    return FALSE;
+// bmodels need special checking because their origin is 0,0,0
+	if (targ.movetype == MOVETYPE_PUSH)
+	{
+		traceline(inflictor.origin, 0.5 * (targ.absmin + targ.absmax), TRUE, self);
+		if (trace_fraction == 1)
+			return TRUE;
+		if (trace_ent == targ)
+			return TRUE;
+		return FALSE;
+	}
+    
+	traceline(inflictor.origin, targ.origin, TRUE, self);
+	if (trace_fraction == 1)
+		return TRUE;
+	traceline(inflictor.origin, targ.origin + '15 15 0', TRUE, self);
+	if (trace_fraction == 1)
+		return TRUE;
+	traceline(inflictor.origin, targ.origin + '-15 -15 0', TRUE, self);
+	if (trace_fraction == 1)
+		return TRUE;
+	traceline(inflictor.origin, targ.origin + '-15 15 0', TRUE, self);
+	if (trace_fraction == 1)
+		return TRUE;
+	traceline(inflictor.origin, targ.origin + '15 -15 0', TRUE, self);
+	if (trace_fraction == 1)
+		return TRUE;
+
+	return FALSE;
+};
+
+float(float min, float max, vector org1, vector org2, float radius) calculate_proximity_value =
+{
+	float proximity_value;
+	float distance = fabs(vlen(org1 - org2));
+
+	if (distance <= radius) {
+		float normalized_distance = distance / radius;
+		proximity_value = min + (max - min) * (1 - normalized_distance);
+	} else {
+		proximity_value = min;
+	}
+	
+	return proximity_value;
+};
+
+float(float damage_type, entity hit_ent, entity attacker) Damage_ElligibleWeaponForBrushDamage = 
+{
+	if ((hit_ent.spawnflags & SPAWNFLAG_FUNCBUTTON_FIREDAMAGE) && attacker.weapons[0].weapon_id != W_M2 && attacker.weapons[0].weapon_id != W_FIW){
+		return false;
+	}
+
+	//No Weapon Flags
+	if (hit_ent.weapon == 0)
+		return true;
+
+	float pap_check = false;
+	if ((hit_ent.weapon & FUNC_ALLOW_UPGRADE) && (attacker.weapons[0].weapon_id != EqualPapWeapon(attacker.weapons[0].weapon_id))){
+		return false;
+	}else{
+		if ((hit_ent.weapon & FUNC_ALLOW_UPGRADE) && (attacker.weapons[0].weapon_id == EqualPapWeapon(attacker.weapons[0].weapon_id))){
+			pap_check = true;
+		}
+	}
+
+	float result = (hit_ent.weapon & damage_type);
+	if (result != damage_type && !pap_check) {
+		return false;
+	}else if (result != damage_type && pap_check){
+		//do direct check so we dont trigger it when ifi it requires a upgraded flamethrower
+		//when we have a upgraded .357 
+		if (hit_ent.weapon != FUNC_ALLOW_UPGRADE){
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void(entity func, entity attacker, float damage) Damage_HurtBrushEntity =
+{
+	entity oldself;
+	oldself = self;
+	self = trace_ent;
+	self.health -= damage;
+	self.enemy = oldself;
+
+	if (self.health <= 0)
+		self.th_die();
+	
+	self = oldself;
+}
+
+float(entity inflictor, entity victim, float damage_max, float damage_min, float radius) Damage_ExplosiveDamage =
+{
+	float damage = calculate_proximity_value(damage_min, damage_max, inflictor.origin, victim.origin, radius);
+
+	if (inflictor.enemy == victim) {
+		if (inflictor.classname == "projectile_raybeam")
+			damage = Gamemode_GetWeaponDamage(1000, inflictor.weapon, inflictor.boxstatus);
+		else if (inflictor.classname == "projectile_grenade")
+			damage = 1000;
+	}
+
+	if (victim.classname != "ai_zombie" && victim.classname != "ai_dog")
+		return damage;
+
+	if (inflictor.classname == "grenade")
+		damage += rounds + 100 + floor(random() * 100);
+	else if (inflictor.classname == "betty")
+		damage += rounds * (100 + floor(random() * 100));
+	else if (inflictor.classname == "projectile_grenade" || inflictor.classname == "rocket" || inflictor.classname == "projectile_raybeam")
+		damage += rounds * floor(random() * 100);
+
+	return damage;
+};
+
+float(entity victim, float damage, vector hit_origin) Damage_CanMakeCrawler =
+{
+	return victim.classname == "ai_zombie" && !victim.crawling && victim.health > damage && damage >= victim.health * 0.1 && hit_origin_z < victim.origin_z;
+};
+
+void(entity inflictor, entity attacker, float damage2, float mindamage, float radius) DamgageExplode =
+{
+	float 	final_damage = 0;
+	float 	damage_style = 0;
+	entity	ent;
+
+	ent = findradius(inflictor.origin, radius);
+	
+	while (ent != world)
+	{
+		final_damage = 0;
+		damage_style = DMG_TYPE_EXPLOSIVE;
+
+		if(ent.classname == "player")
+		{
+			if (ent.perks & P_FLOP)	// PhD Flopper makes us immune to any explosive damage
+				final_damage = 0;
+			else if (inflictor.classname == "betty") // Self-inflicted betties don't do damage either.
+				final_damage = 0;
+			else if (inflictor.owner != ent) // we don't want OUR explosives to harm other players..
+				final_damage = 0;
+			else
+			{
+				final_damage = (radius - vlen(inflictor.origin - ent.origin))*1.5;
+
+				if(final_damage < 0) 
+				{
+					ent = ent.chain;
+					continue;
+				}
+			
+				if (final_damage > radius * 0.75)
+					final_damage = 100;
+			
+				if (final_damage < other.health)
+				{
+					Player_AddScore(self, Gamemode_ScoreForDamage(DMG_SCORE_STDDAMAGE, 0), false);
+				}
+				else if (final_damage > other.health)
+				{
+					Player_AddScore(self, Gamemode_ScoreForDamage(DMG_SCORE_STDDAMAGE, 0), false);
+				}
+				else
+				{
+					final_damage /= radius;
+					final_damage *= 60;
+				}
+
+				// inflicting damage from an explosive introduces a delay before
+				// player can sprint again.
+				ent.sprint_delay = time + 3;
+			}
+			// shake the camera on impact
+			vector distance;
+			distance = inflictor.angles - ent.angles;
+
+			// just to prevent radical punchangles
+			while(distance_x > 10 || distance_x < -10) {
+				distance_x /= 2;
+			}
+			while(distance_y > 10 || distance_y < -10) {
+				distance_y /= 2;
+			}
+
+			// Give a heavy rumble for feedback of being in explosion vicinity.
+			nzp_rumble(ent, 1400, 2000, 200);
+			
+			// apply
+			ent.punchangle_x = distance_x;
+			ent.punchangle_y = distance_y;
+		}
+		else if (ent.classname == "explosive_barrel")
+		{
+			final_damage = radius - vlen(inflictor.origin - ent.origin);
+			final_damage *= 4;
+
+			if (final_damage < 0) 
+			{
+				ent = ent.chain;
+				continue;
+			}
+
+			ent.health -= final_damage;
+
+			entity oldself;
+			oldself  = self;
+			self = ent;
+			Barrel_Hit();
+			self = oldself;
+		}
+		else if (ent.classname == "teddy_spawn")
+		{
+			entity oldself2;
+			oldself2 = self;
+			self = ent;
+			teddy_react();
+			self = oldself2;
+		}
+		else if (ent.takedamage && ent.classname != "func_button" && ent.classname != "ai_zombie_head" && ent.classname != "ai_zombie_larm" && ent.classname != "ai_zombie_rarm")
+		{
+			if (mapname == "ndu" && ent.classname == "ai_zombie" && inflictor.classname == "explosive_barrel") {
+				ach_tracker_barr++;
+
+				if (ach_tracker_barr >= 15) 
+				{
+					GiveAchievement(13);
+				}
+			}
+
+			final_damage = Damage_ExplosiveDamage(inflictor, ent, damage2, mindamage, radius);
+			damage_style = DMG_TYPE_EXPLOSIVE;
+
+			if (inflictor.classname == "grenade" || inflictor.classname == "projectile_raybeam")
+				damage_style = DMG_TYPE_GRENADE;
+			else if (inflictor.classname == "player")
+				damage_style = DMG_TYPE_FLOPPER;
+		}
+		else if (ent.classname == "func_button" && ent.health > 0){
+			float do_not_attack = false;
+
+			switch(inflictor.classname){
+				case "projectile_raybeam":
+					if (!Damage_ElligibleWeaponForBrushDamage(FUNC_ALLOW_RAY, ent, attacker)){
+						do_not_attack = true;
+					}
+					break;
+				
+				case "grenade":
+				case "rocket":
+				case "projectile_grenade":
+					if (!Damage_ElligibleWeaponForBrushDamage(FUNC_ALLOW_EXPLOSIVE, ent, attacker)){
+						do_not_attack = true;
+					}
+					break;
+				
+				default:
+					do_not_attack = true;
+					break;
+			}	
+
+			if (do_not_attack){
+				ent = ent.chain;
+				continue;
+			}
+			else{ //needed or else the game gets stuck into an infinite loop somehow
+				oldself = self;
+				self = ent;
+				self.health -= self.max_health + 1;
+				self.enemy = oldself;
+
+				if (self.health < 0)
+					self.th_die();
+				self = oldself;
+				ent = ent.chain;
+				continue;
+			}
+		} 
+
+		if (final_damage > 0) {
+			if (CanDamage (ent, inflictor)) {
+				if ((damage_style == DMG_TYPE_EXPLOSIVE || damage_style == DMG_TYPE_GRENADE) && Damage_CanMakeCrawler(ent, final_damage, inflictor.origin))
+					ent.crawling = 2;
+
+				DamageHandler (ent, attacker, final_damage, damage_style);
+			}
+		}		
+		ent = ent.chain;
+	}
+};

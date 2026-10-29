@@ -1,0 +1,6 @@
+game nzp
+name "NZPortable Wii Online"
+basegame nzp
+basegame *online
+mainconfig "wii-online.cfg"
+disablehomedir 1

@@ -1,0 +1,7 @@
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR powerpc)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+set(CMAKE_C_COMPILER /opt/devkitpro/devkitPPC/bin/powerpc-eabi-gcc)
+set(CMAKE_AR /opt/devkitpro/devkitPPC/bin/powerpc-eabi-ar)
+set(CMAKE_RANLIB /opt/devkitpro/devkitPPC/bin/powerpc-eabi-ranlib)
+set(CMAKE_C_FLAGS_INIT "-mrvl -mcpu=750 -meabi -mhard-float -ffunction-sections -fdata-sections -I/opt/devkitpro/libogc/include")
