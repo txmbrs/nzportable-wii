@@ -15,21 +15,27 @@ The single player port and the experimental FTE online client are separate execu
 
 **Online gameplay does not work yet.** The client can retrieve and display
 servers and establish an initial connection, but joining a playable game is
-still failing. 
+still failing.
+
 ## Downloads
 
-Release version: **0.1**. Download updates from
+Release version: **0.1**. Download the full package from
 [GitHub Releases](https://github.com/txmbrs/nzportable-wii/releases).
 See [v0.1 release notes](docs/RELEASE-v0.1.md) for requirements and known issues.
 
-The experimental online ZIP includes a Windows generator for a private TLS seed.
-See [the seed/FTP instructions](release-tools/README.md). The seed is generated
-locally for each console and is never included in a public download.
-
 ## Installation
 
-The existing installation uses `apps/nzportable/boot.dol` for single player and
-`apps/nzportable/online/client.dol` for the experimental online client on SD/USB.
+1. Download **NZPortable-Wii-v0.1-full.zip** from Releases and extract it.
+2. Copy the included **nzportable** folder directly into **apps** on SD/USB.
+3. Launch NZPortable Wii from Homebrew Channel.
+
+The archive includes game data, maps, the single player executable and the
+experimental online client with its support files. An existing installation
+is not required. Keep existing settings, saves and a private seed when updating.
+
+Single player needs no TLS seed. For experimental online startup, the app folder
+includes a Windows seed generator: [instructions](release-tools/README.md).
+Online gameplay remains incomplete as described above.
 
 ## Source and building
 

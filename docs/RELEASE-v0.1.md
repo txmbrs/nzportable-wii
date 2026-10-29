@@ -1,44 +1,43 @@
 # NZPortable Wii v0.1
 
-First public development release of an unofficial Nintendo Wii port of
-[Nazi Zombies: Portable](https://github.com/nzp-team/nzportable), originally
-created by NZP Team and its contributors. See CREDITS.md and the retained licenses.
+An unofficial Nintendo Wii port of [Nazi Zombies: Portable](https://github.com/nzp-team/nzportable),
+originally created by NZP Team and its contributors.
 
-## Status
+## Installation
 
-**Online gameplay does not work yet.** Server browsing and the initial connection
-work, but entry into a playable game is not complete and may time out during
-loading. The online client is provided for development/testing only.
+1. Download `NZPortable-Wii-v0.1-full.zip` and extract it.
+2. Copy the included `nzportable` folder directly into `apps` on your SD/USB.
+3. Launch NZPortable Wii from Homebrew Channel.
 
-The single player executable and online client are separate. PC reference tests
-are not a confirmation that online works on Wii. No claim of stable 60 FPS or
-fully tested hardware compatibility is made by this release.
+The package includes single player, game data, maps, the experimental online
+client and its support files. No existing game installation is required.
+Keep your existing settings, saves and private seed when updating.
+
+## Online status
+
+**Online gameplay does not work yet.** Server browsing and initial connections
+work, but the client cannot yet complete entry into a playable game and may time
+out during loading. A Connected message is not confirmation of working gameplay.
+
+Single player does not need a TLS seed. For experimental online startup on a new
+console, run `Generate-TLS-Seed.cmd` inside the extracted `nzportable` folder on
+Windows before copying it. This creates a private file in `online`. A separate
+seed is needed for each Wii; existing valid seeds are preserved.
 
 ## Downloads
 
-- `NZPortable-Wii-v0.1-single-player-update.zip`: single player executable
-  (internal build r20) and Homebrew metadata for an existing Wii installation.
-- `NZPortable-Wii-v0.1-online-experimental-update.zip`: online executable
-  (internal build r18ax), Windows seed generator, instructions and licenses.
-- `NZPortable-Wii-v0.1-source.zip`: port sources, build/integration helpers,
-  dependency source archives and license/attribution notices.
-- `SHA256SUMS.txt`: checksums for the downloadable archives.
+- `NZPortable-Wii-v0.1-full.zip`: complete `nzportable` app folder.
+- `NZPortable-Wii-v0.1-source.zip`: port and integration sources.
+- `SHA256SUMS.txt`: archive checksums.
 
-These executable ZIPs are **updates for an existing installation**, not a full
-standalone game download. Keep your existing `nzp` game data and online support
-files (`compat.pk3`, configuration, certificates and program packages). The
-online update replaces only `online/client.dol`; it contains no game packages,
-settings or private TLS seed. New installations need those support files first.
+Release version 0.1 includes single player build r20 and online build r18ax.
+PC reference connection tests do not establish that online works on Wii. No
+claim of stable 60 FPS or full hardware compatibility is made.
 
-## FTP installation
+## Credits and licenses
 
-1. Fully exit the game before replacing an executable.
-2. Extract the appropriate update ZIP on your PC. Upload its `apps` contents over
-   FTP to the corresponding SD/USB folders. Keep the folder name `nzportable`.
-3. For a console without an existing TLS seed, run `Generate-TLS-Seed.cmd` on
-   Windows and upload the generated `apps/nzportable/online/tls-seed.bin` in binary
-   mode. Preserve an existing seed. Generate a separate seed for each Wii.
-4. Launch from Homebrew Channel. The online option remains experimental.
-
-ELF/debug files do not need to be uploaded. Build/setup documentation is still
-being improved; a clean-machine build has not yet been independently verified.
+Original game: NZP Team and contributors. Wii port: txmbrs.
+Game assets use their upstream CC BY-SA 4.0 terms and component attributions;
+modified asset contributions retain the appropriate license. Engine sources,
+fonts and dependencies retain their own license notices. See the included
+`licenses` and `nzp/licenses` folders, CREDITS.md and THIRD_PARTY_NOTICES.md.

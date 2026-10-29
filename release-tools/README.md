@@ -1,24 +1,16 @@
 # Private TLS seed generator
 
-Windows: extract the experimental online ZIP to a local folder, then double-click
-`Generate-TLS-Seed.cmd`. Python is not required. This creates one 64-byte private
-seed at `apps/nzportable/online/tls-seed.bin` inside the extracted folder.
+The full release contains a `nzportable` folder ready to copy into `apps`.
+Single player does not require a TLS seed.
 
-Upload that file using **binary transfer** in your FTP client to the matching
-`apps/nzportable/online/` folder on your Wii storage. Do not upload the generator
-scripts to Wii. The seed folder and file must remain writable by the client.
+For experimental online startup on a new console, open the extracted
+`nzportable` folder on Windows and double-click `Generate-TLS-Seed.cmd` before
+copying it. Python is not required. The tool creates the private 64-byte file
+`online/tls-seed.bin`. It preserves an existing valid seed.
 
-Keep an existing seed when updating. A valid existing seed is preserved; an
-invalid existing file produces an error without overwriting it. Generate a new
-seed for each separate Wii. Never share the generated file or put it on GitHub.
-The release ZIP deliberately contains no seed.
+Use a separate seed for each Wii. Do not share that file or put it on GitHub.
+The release archive contains no private seed. Keep the folder and seed writable.
+Do not replace an existing seed when updating.
 
-Alternatively, Python users can run:
-
-```sh
-python fte-online/provision_tls_seed.py /path/to/extracted/apps/nzportable/online
-```
-
-This tool does not configure FTP or transfer files itself. **Online gameplay
-still does not work**: the client lists servers and establishes an initial
-connection, but cannot yet complete entry into a playable game.
+The generator does not make online gameplay work. Server browsing and the
+initial connection work, but entry into a playable game remains incomplete.

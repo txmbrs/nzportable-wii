@@ -1,4 +1,4 @@
-param([string]$OutputDirectory = (Join-Path $PSScriptRoot 'apps/nzportable/online'))
+param([string]$OutputDirectory = (Join-Path $PSScriptRoot 'online'))
 $ErrorActionPreference = 'Stop'
 $seedPath = Join-Path ([System.IO.Path]::GetFullPath($OutputDirectory)) 'tls-seed.bin'
 if ([System.IO.File]::Exists($seedPath)) {
@@ -23,5 +23,5 @@ try {
     $rng.Dispose()
     [Array]::Clear($seedBytes, 0, $seedBytes.Length)
 }
-Write-Host 'Private TLS seed created. Upload apps/nzportable/online/tls-seed.bin over FTP.'
+Write-Host 'Private TLS seed created in the online folder.'
 Write-Host 'Create a separate seed for each Wii. Keep the existing seed when updating.'
