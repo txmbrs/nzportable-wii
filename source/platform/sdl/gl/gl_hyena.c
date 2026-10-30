@@ -27,6 +27,10 @@
 /* OpenGX's texture accessor is exported by the SDK library. Older SDKs
  * without it retain the full-page fallback instead of risking stale texels. */
 extern bool _ogx_texture_get_texobj(GLuint name, GXTexObj *object) __attribute__((weak));
+#include "../../../platform/wii/lightmap_wii.h"
+extern void _ogx_bytes_to_texture(const void *data, GLenum format, GLenum type,
+    int width, int height, void *dst, uint32_t gx_format,
+    int x, int y, int dstpitch) __attribute__((weak));
 #endif
 
 // Blargh, Windows (or minGW?)
@@ -340,11 +344,98 @@ Hyena_BackendUploadLevel(int texture, int level, int storage, int width, int hei
     glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
 }
 
+#ifdef PLATFORM_WII
+/* Only the tiny calibration uses the internal converter. Normal updates keep
+ * glTexSubImage2D and the established tile-row cache flush/order semantics. */
+static qboolean Wii_LightmapConverterMatches(void)
+{
+    static int verified;
+    uint8_t source[16*16*4], linear[16*16*4], packed[16*16*2];
+    uint8_t reference[16*16*4], fast[16*16*4];
+    GLint saved[4];
+    const GLenum fields[4]={GL_UNPACK_ALIGNMENT,GL_UNPACK_ROW_LENGTH,
+        GL_UNPACK_SKIP_ROWS,GL_UNPACK_SKIP_PIXELS};
+    int i, compact;
+    if (verified) return verified>0;
+    verified=-1;
+    if (!_ogx_bytes_to_texture) return false;
+    for (i=0;i<4;++i) glGetIntegerv(fields[i],&saved[i]);
+    glPixelStorei(fields[0],1);
+    for (i=1;i<4;++i) glPixelStorei(fields[i],0);
+    for (i=0;i<256;++i) {
+        unsigned pixel;
+        source[i*4]=i;
+        source[i*4+1]=(i*73)&255;
+        source[i*4+2]=(i*151)&255;
+        source[i*4+3]=i;
+        pixel=((source[i*4]>>3)<<11)|((source[i*4+1]>>3)<<6)|
+            ((source[i*4+2]>>3)<<1)|(source[i*4+3]>>7);
+        packed[i*2]=pixel>>8; packed[i*2+1]=pixel;
+    }
+    verified=1;
+    for (compact=0;compact<=1;++compact) {
+        Wii_LightmapRGBA8(linear,sizeof(linear),source,16,16,64,0,0,16,16,compact);
+        memset(reference,0x5a,sizeof(reference));
+        memset(fast,0xa5,sizeof(fast));
+        _ogx_bytes_to_texture(compact?packed:source,GL_RGBA,
+            compact?GL_UNSIGNED_SHORT_5_5_5_1:GL_UNSIGNED_BYTE,
+            16,16,reference,GX_TF_RGBA8,0,0,64);
+        _ogx_bytes_to_texture(linear,GL_RGBA,GL_UNSIGNED_BYTE,
+            16,16,fast,GX_TF_RGBA8,0,0,64);
+        if (memcmp(reference,fast,sizeof(fast))) verified=-1;
+    }
+    for (i=0;i<4;++i) glPixelStorei(fields[i],saved[i]);
+    Sys_Printf("Wii lightmaps: fast converter %s; existing precision preserved\n",
+        verified>0?"verified":"mismatch, using original path");
+    return verified>0;
+}
+static qboolean Wii_TryFastLightmap(int texture, const hyena_texture_desc_t *desc)
+{
+    static uint8_t scratch[128*128*4];
+    static qboolean announced;
+    const hyena_texture_t *record=&hyena_textures[texture];
+    GXTexObj object;
+    int compact=hyena_lightmap_16bit.value!=0;
+    int width=desc->update_width?desc->update_width:desc->width;
+    int height=desc->update_width?desc->update_height:desc->height;
+    int stride;
+    GLint row_length, skip_rows, skip_pixels;
+    if (desc->width<=0 || desc->width>INT_MAX/4) return false;
+    stride=desc->row_stride?desc->row_stride:desc->width*4;
+    if (!desc->lightmap || !desc->update || !record->used ||
+        desc->format!=HYE_TEXTURE_RGBA8 || record->width!=desc->width ||
+        record->height!=desc->height || record->bpp!=(compact?2:4) ||
+        record->mipmaps || desc->mip_levels || !_ogx_texture_get_texobj ||
+        !_ogx_texture_get_texobj(hyena_texture_objects[texture],&object) ||
+        GX_GetTexObjFmt(&object)!=GX_TF_RGBA8 ||
+        !Wii_LightmapConverterMatches()) return false;
+    glGetIntegerv(GL_UNPACK_ROW_LENGTH,&row_length);
+    glGetIntegerv(GL_UNPACK_SKIP_ROWS,&skip_rows);
+    glGetIntegerv(GL_UNPACK_SKIP_PIXELS,&skip_pixels);
+    if (row_length || skip_rows || skip_pixels) return false;
+    if (!Wii_LightmapRGBA8(scratch,sizeof(scratch),(const uint8_t *)desc->pixels,
+        desc->width,desc->height,stride,desc->update_x,desc->update_y,
+        width,height,compact)) return false;
+    Hyena_BackendUploadLevel(texture,0,HYE_PIXELS_RGBA8,width,height,
+        desc->update_x,desc->update_y,false,scratch);
+    {
+        int filter=desc->filter==HYE_FILTER_LINEAR?HYE_LINEAR:HYE_NEAREST;
+        Hyena_BackendTextureFilter(texture,filter,filter);
+    }
+    if (!announced) {
+        Sys_Printf("Wii lightmaps: reusable RGBA fast updates active (no region allocation or packed-pixel decode)\n");
+        announced=true;
+    }
+    return true;
+}
+#endif
+
 void
 Hyena_BackendUploadTexture(int texture, const hyena_texture_desc_t * desc)
 {
 #ifdef PLATFORM_WII
     hyena_texture_desc_t full_page;
+    if (Wii_TryFastLightmap(texture,desc)) return;
     if (desc->lightmap && desc->update && !_ogx_texture_get_texobj) {
         /* OpenGX update_texture flushes calc_memory(update_width,update_height)
          * from the atlas base even for an offset/strided tiled subrectangle.
