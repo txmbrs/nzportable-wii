@@ -18,6 +18,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #include "../nzportable_def.h"
 #include "menu_defs.h"
+#ifdef PLATFORM_WII
+#include "../platform/wii/menu_images_wii.h"
+#endif
 
 qboolean		menu_is_solo;
 
@@ -54,10 +57,18 @@ image_t Menu_PickBackground (void)
 
 	choice = rand() % num_custom_images;
 	for (i = 0; i < num_user_maps; i++) {
+#ifdef PLATFORM_WII
+        if (custom_maps[i].map_use_thumbnail!=1) continue;
+        if (choice--==0) {
+            int picture=Wii_MenuMapImage(i,1);
+            return picture>=0?picture:menu_bk;
+        }
+#else
 		if (menu_usermap_image[i] < 0)
 			continue;
 		if (choice-- == 0)
 			return menu_usermap_image[i];
+#endif
 	}
 	return menu_bk;
 }
@@ -102,7 +113,11 @@ int Menu_GetMapImage (char *bsp_name)
 	for (int i = 0; i < num_user_maps; i++) {
 		if (custom_maps[i].map_use_thumbnail) {
 			if (!strcmp(bsp_name, custom_maps[i].map_name)) {
+#ifdef PLATFORM_WII
+                return Wii_MenuMapImage(i,0);
+#else
 				return menu_usermap_image[i];
+#endif
 			}
 		}
 	}
@@ -726,7 +741,11 @@ void Menu_DrawMapButton (int order, int button_index, int usermap_index, int map
 
 		UI_SetAlignment (UI_ANCHOR_LEFT, UI_ANCHOR_TOP);
 		// Draw map thumbnail picture
+#ifdef PLATFORM_WII
+        Menu_DrawPicStretch(x_pos,y_pos,Wii_MenuMapImage(index,0),image_width,image_height);
+#else
 		Menu_DrawPicStretch (x_pos, y_pos, menu_usermap_image[index], image_width, image_height);
+#endif
 
 		// Draw border around map image
 		Menu_DrawMapBorder (x_pos/vid.scale, y_pos/vid.scale, image_width, image_height);

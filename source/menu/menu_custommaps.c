@@ -18,6 +18,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #include "../nzportable_def.h"
 #include "menu_defs.h"
+#ifdef PLATFORM_WII
+#include "../platform/wii/menu_images_wii.h"
+#endif
 #ifdef __NSPIRE__
 #include <libndls.h>
 #include <dirent.h>
@@ -354,6 +357,14 @@ void Menu_Preload_Custom_Images(void)
 	num_custom_images = 0;
 	for (int i = 0; i < num_user_maps; i++)
 		menu_usermap_image[i] = -1;
+
+#ifdef PLATFORM_WII
+    Wii_MenuImagesReset();
+    for (int i=0; i<num_user_maps; ++i)
+        if (custom_maps[i].map_use_thumbnail==1) ++num_custom_images;
+    Sys_Printf("Wii menu images: %d map pictures available; loading background and selected preview on demand\n",num_custom_images);
+    return;
+#endif
 
     // Pre-load all custom map menu images to use in the background
 	for (int i = 0; i < num_user_maps; i++) {
