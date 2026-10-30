@@ -199,6 +199,7 @@ void Key_WriteBindings (FILE *f);
 void Key_WriteDTBindings (FILE *f);
 void Key_WriteHoldBindings (FILE *f);
 void Key_SetBinding (int keynum, char *binding);
+void Key_SetDTBinding (int keynum, char *binding);
 void Key_SetHoldBinding (int keynum, char *binding);
 void Key_UpdateHoldBindings (void);
 void Key_ClearStates (void);

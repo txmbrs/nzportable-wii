@@ -20,9 +20,15 @@ int main(void){
  assert(!poll(2000,0,0,1,1));assert(!poll(2020,0,1,1,1));
  assert(!poll(2040,0,0,1,1));assert(poll(2060,0,1,1,1));
  reset(0);assert(!poll(20,0,1,1,1));assert(!poll(40,0,0,1,1));
- assert(!poll(500,0,1,1,1)); /* expired first tap */
- reset(0);assert(!poll(20,0,.3f,1,1));assert(!poll(240,0,.8f,1,1));
- assert(!poll(260,0,0,1,1));assert(!poll(280,0,1,1,1)); /* slow first push */
+ assert(!poll(700,0,1,1,1)); /* expired first tap */
+ reset(0);assert(!poll(20,0,.35f,1,1));assert(!poll(300,0,.8f,1,1));
+ assert(!poll(320,0,0,1,1));assert(!poll(340,0,1,1,1)); /* slow first push */
+ /* Physical travel can stop well below raw 0.8; off-centre neutral and
+  * a 500 ms double tap must work without a single held push sprinting. */
+ reset(0);assert(!poll(20,.22f,.22f,1,1));assert(!poll(60,.1f,.55f,1,1));
+ assert(!poll(100,.2f,.2f,1,1));assert(poll(560,.1f,.55f,1,1));
+ reset(0);assert(!poll(50,0,.75f,1,1));
+ for(unsigned t=100;t<2000;t+=50)assert(!poll(t,0,.75f,1,1));
  reset(0);assert(!poll(20,0,1,1,1));assert(!poll(40,0,0,1,1));
  assert(!poll(60,0,1,0,1));assert(!poll(80,0,1,1,1)); /* menu/aim/death */
  assert(!poll(100,0,0,1,1));assert(!poll(120,0,1,1,1));

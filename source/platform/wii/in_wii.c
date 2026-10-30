@@ -6,6 +6,7 @@
 #include "../sdl/sdl_local.h"
 #include "../../menu/menu_defs.h"
 #include "sprint_wii.h"
+void Wii_ResetControls_f(void);
 
 static in_analog_stick_t sticks[2];
 static unsigned int rumble_until;
@@ -89,7 +90,10 @@ void Wii_PollInput(void)
         cls.state==ca_connected && cls.signon==SIGNONS && cl.stats[STAT_HEALTH]>0 &&
         cl.stats[STAT_ZOOM]!=1 && cl.stats[STAT_ZOOM]!=2 && !(keys&(1u<<5)),
         sticks[0].x,sticks[0].y,SDL_GetTicks()))
+    {
         Cbuf_AddText("impulse 23\n");
+        Sys_Printf("Wii sprint: double forward tap detected; impulse 23 queued\n");
+    }
     if (rumble_until && SDL_GetTicks() >= rumble_until) {
         WPAD_Rumble(0, 0); PAD_ControlMotor(0, PAD_MOTOR_STOP); rumble_until = 0;
     }
@@ -107,7 +111,7 @@ void IN_PlatformRumble(unsigned short low, unsigned short high, unsigned int dur
     WPAD_Rumble(0, on); PAD_ControlMotor(0, on ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP);
     rumble_until = on ? SDL_GetTicks() + duration : 0;
 }
-void IN_PlatformInit(void) { Cvar_SetValue("in_anub_mode", 1); Cvar_RegisterVariable(&wii_flick_sprint); }
+void IN_PlatformInit(void) { Cvar_SetValue("in_anub_mode", 1); Cvar_RegisterVariable(&wii_flick_sprint); Cmd_AddCommand("wii_reset_controls",Wii_ResetControls_f); }
 void IN_PlatformShutdown(void) { WPAD_Rumble(0, 0); PAD_ControlMotor(0, PAD_MOTOR_STOP); }
 void IN_PlatformCommands(void) {}
 void IN_PlatformMove(usercmd_t *cmd) { (void)cmd; }

@@ -27,6 +27,13 @@ int         bindings_currentwatch = -1;
 
 qboolean    in_bind = false;
 char        *current_command;
+#ifdef PLATFORM_WII
+static void Menu_ToggleStickSprint(void)
+{
+    Cvar_SetValue("wii_flick_sprint",!Cvar_VariableValue("wii_flick_sprint"));
+    Menu_SetSound(MENU_SND_ENTER);
+}
+#endif
 
 /*
 ===============
@@ -135,8 +142,13 @@ void Menu_Bindings_Draw (void)
         Menu_DrawButton(1, bindings_index++, "JUMP", "", Menu_Bindings_SetBindListen);
         Menu_Bindings_PrintBindForCommand(1, "+jump");
 
+#ifdef PLATFORM_WII
+        Menu_DrawButton(2, bindings_index++, "SPRINT", "Push the main stick forward twice. Select to enable or disable.", Menu_ToggleStickSprint);
+        Menu_DrawOptionKey(2,Cvar_VariableValue("wii_flick_sprint")?"STICK UP x2":"DISABLED");
+#else
         Menu_DrawButton(2, bindings_index++, "SPRINT", "", Menu_Bindings_SetBindListen);
         Menu_Bindings_PrintBindForCommand(2, "impulse 23");
+#endif
 
         Menu_DrawButton(3, bindings_index++, "CHANGE STANCE", "", Menu_Bindings_SetBindListen);
         Menu_Bindings_PrintBindForCommand(3, "impulse 30");

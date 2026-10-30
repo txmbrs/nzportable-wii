@@ -34,6 +34,13 @@ extern cvar_t	in_acceleration;
 extern cvar_t	in_tolerance;
 extern cvar_t	in_anub_mode;
 extern cvar_t	m_pitch;
+#ifdef PLATFORM_WII
+static void Menu_Controls_RestoreDefaults(void)
+{
+    Cbuf_AddText("wii_reset_controls\n");
+    Menu_SetSound(MENU_SND_ENTER);
+}
+#endif
 #ifdef PLATFORM_USES_GENERIC_GLYPHS
 extern cvar_t    cl_controllerglyphs;
 static char     *controller_glyphs_string;
@@ -257,6 +264,9 @@ void Menu_Controls_Draw (void)
 
 	// Bindings
 	Menu_DrawButton (controls_buttons++, controls_index++, "BINDINGS", "Change Input Bindings.", Menu_Bindings_Set);
+#ifdef PLATFORM_WII
+    Menu_DrawButton(controls_buttons++,controls_index++,"RESTORE DEFAULTS","Restore and save default controls and button bindings.",Menu_Controls_RestoreDefaults);
+#endif
 
 	Menu_DrawDivider(-2.5);
 	Menu_DrawButton(-2, controls_index++, "APPLY", "Save & Apply Settings.", Menu_Controls_ApplySettings);
