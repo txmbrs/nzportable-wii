@@ -15,7 +15,7 @@ stub=r'''
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
-static unsigned char arena[12*1024*1024] __attribute__((aligned(32)));
+static unsigned char arena[24*1024*1024] __attribute__((aligned(32)));
 static uintptr_t arena_low=(uintptr_t)arena+2*1024*1024,arena_high=(uintptr_t)arena+sizeof(arena);
 static int force_heap_fail,force_real_fail,force_init_fail,real_frees,heap_frees;
 static void *SYS_GetArena2Lo(void){return (void*)arena_low;}
@@ -46,7 +46,14 @@ int main(int argc,char **argv){
  if(argc>1){if(!strcmp(argv[1],"small"))arena_high=arena_low+256*1024;else force_init_fail=1;Wii_RenderMemoryInit();assert(!render_ready && arena_low==original);void *p=__wrap_memalign(64,1024);assert(p && !render_owns(p));__wrap_free(p);puts("PASS: unavailable/failed MEM2 leaves arena unchanged and uses libc");return 0;}
  void *cold=__wrap_memalign(32,256);assert(cold);
  Wii_RenderMemoryInit();assert(render_ready && render_low>=original && render_high==arena_low);
- assert(render_high-render_low<=8*1024*1024 && arena_high-arena_low>=2*1024*1024);
+ assert(render_high-render_low==20*1024*1024 && arena_high-arena_low==2*1024*1024);
+ /* r24 stranded this memory at the 8 MiB cap. Emulate resident buffers and
+  * the next 512x512 RGBA upload while libc cannot satisfy any allocation. */
+ force_real_fail=1;
+ void *resident=__wrap_memalign(32,7528216);assert(resident && render_owns(resident));
+ void *texture=__wrap_memalign(32,512*512*4);assert(texture && render_owns(texture));
+ assert((uintptr_t)texture+512*512*4<=render_high);
+ __wrap_free(texture);__wrap_free(resident);force_real_fail=0;
  __wrap_free(cold);assert(real_frees==1);
  for(size_t alignment=1;alignment<=4096;alignment*=2){
   unsigned char *p=__wrap_memalign(alignment,257);assert(p && render_owns(p) && !((uintptr_t)p&(alignment-1)));

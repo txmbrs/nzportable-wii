@@ -5,11 +5,14 @@
 #include <SDL.h>
 #include "../sdl/sdl_local.h"
 #include "../../menu/menu_defs.h"
+#include "sprint_wii.h"
 
 static in_analog_stick_t sticks[2];
 static unsigned int rumble_until;
 static qboolean gamepad_connected;
 static unsigned int previous_keys;
+static wii_sprint_gesture_t sprint_gesture;
+static cvar_t wii_flick_sprint={.name="wii_flick_sprint",.string="1",.flags=CVAR_ARCHIVE};
 static const struct {unsigned int wpad,pad;int key;} button_map[]={
     {WPAD_BUTTON_A|WPAD_CLASSIC_BUTTON_A,PAD_BUTTON_A,K_BOTTOMFACE},
     {WPAD_BUTTON_2|WPAD_CLASSIC_BUTTON_B,PAD_BUTTON_B,K_RIGHTFACE},
@@ -33,6 +36,7 @@ static float axis(int value, int center, int low, int high)
 }
 void Wii_PollInput(void)
 {
+    unsigned int move_source=0;
     WPAD_ScanPads(); unsigned int connected = PAD_ScanPads();
     WPADData *w = WPAD_Data(0);
     unsigned int wp = w && w->err == WPAD_ERR_NONE ? w->btns_h : 0;
@@ -55,6 +59,7 @@ void Wii_PollInput(void)
     if(wp||pd){IN_SetActiveDevice(IN_DEVICE_GAMEPAD);Menu_SetInputDevice(IN_DEVICE_GAMEPAD);}
     memset(sticks, 0, sizeof(sticks));
     if (w && w->err == WPAD_ERR_NONE && w->exp.type == WPAD_EXP_NUNCHUK) {
+        move_source=1;
         joystick_t *j = &w->exp.nunchuk.js;
         sticks[0].x = axis(j->pos.x, j->center.x, j->min.x, j->max.x);
         sticks[0].y = axis(j->pos.y, j->center.y, j->min.y, j->max.y);
@@ -64,17 +69,27 @@ void Wii_PollInput(void)
             sticks[1].y = (240.0f - w->ir.y) / 240.0f;
         }
     } else if(w && w->err==WPAD_ERR_NONE && w->exp.type==WPAD_EXP_CLASSIC){
+        move_source=2;
         joystick_t *left=&w->exp.classic.ljs,*right=&w->exp.classic.rjs;
         sticks[0].x=axis(left->pos.x,left->center.x,left->min.x,left->max.x);
         sticks[0].y=axis(left->pos.y,left->center.y,left->min.y,left->max.y);
         sticks[1].x=axis(right->pos.x,right->center.x,right->min.x,right->max.x);
         sticks[1].y=axis(right->pos.y,right->center.y,right->min.y,right->max.y);
     } else if (connected & 1u) {
+        move_source=3;
         sticks[0].x = PAD_StickX(0) / 100.0f;
         sticks[0].y = PAD_StickY(0) / 100.0f;
         sticks[1].x = PAD_SubStickX(0) / 100.0f;
         sticks[1].y = PAD_SubStickY(0) / 100.0f;
     }
+    /* Use the game's real sprint impulse; stamina and stopping remain in QC.
+     * Two forward taps with neutral between; a single held push just walks. */
+    if (Wii_SprintGesture(&sprint_gesture,move_source,
+        wii_flick_sprint.value && key_dest==key_game && !cl.paused &&
+        cls.state==ca_connected && cls.signon==SIGNONS && cl.stats[STAT_HEALTH]>0 &&
+        cl.stats[STAT_ZOOM]!=1 && cl.stats[STAT_ZOOM]!=2 && !(keys&(1u<<5)),
+        sticks[0].x,sticks[0].y,SDL_GetTicks()))
+        Cbuf_AddText("impulse 23\n");
     if (rumble_until && SDL_GetTicks() >= rumble_until) {
         WPAD_Rumble(0, 0); PAD_ControlMotor(0, PAD_MOTOR_STOP); rumble_until = 0;
     }
@@ -82,7 +97,7 @@ void Wii_PollInput(void)
 qboolean IN_PlatformHasMouse(void) { return false; }
 qboolean IN_PlatformHasGamepad(void) { return gamepad_connected; }
 void IN_SetMouseToRelative(bool relative) { (void)relative; }
-void IN_PlatformClearPendingInput(void) { memset(sticks, 0, sizeof(sticks)); }
+void IN_PlatformClearPendingInput(void) { memset(sticks, 0, sizeof(sticks)); memset(&sprint_gesture,0,sizeof(sprint_gesture)); }
 void IN_PlatformMouseMove(usercmd_t *cmd) { (void)cmd; }
 void IN_PlatformSetLightbar(byte r, byte g, byte b) { (void)r; (void)g; (void)b; }
 qboolean IN_PlatformGetGyro(float *x, float *y) { *x = *y = 0; return false; }
@@ -92,7 +107,7 @@ void IN_PlatformRumble(unsigned short low, unsigned short high, unsigned int dur
     WPAD_Rumble(0, on); PAD_ControlMotor(0, on ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP);
     rumble_until = on ? SDL_GetTicks() + duration : 0;
 }
-void IN_PlatformInit(void) { Cvar_SetValue("in_anub_mode", 1); }
+void IN_PlatformInit(void) { Cvar_SetValue("in_anub_mode", 1); Cvar_RegisterVariable(&wii_flick_sprint); }
 void IN_PlatformShutdown(void) { WPAD_Rumble(0, 0); PAD_ControlMotor(0, PAD_MOTOR_STOP); }
 void IN_PlatformCommands(void) {}
 void IN_PlatformMove(usercmd_t *cmd) { (void)cmd; }

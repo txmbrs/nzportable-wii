@@ -32,7 +32,8 @@ void Wii_RenderMemoryInit(void)
     low=(old_low+31)&~(uintptr_t)31;
     high=(uintptr_t)SYS_GetArena2Hi();
     bytes=high>low && high-low>keep ? (high-low-keep)&~(size_t)31 : 0;
-    if(bytes>8u*1024*1024)bytes=8u*1024*1024;
+    /* The hunk is already reserved. Use the remaining arena, rather than
+     * stranding MEM2 behind an 8 MiB cap while texture uploads exhaust MEM1. */
     if(bytes>=512u*1024 && __lwp_heap_init(&render_heap,(void *)low,bytes,32)) {
         render_low=low;render_high=low+bytes;
         SYS_SetArena2Lo((void *)render_high);
