@@ -18,6 +18,7 @@
 #include <ogc/system.h>
 #include <network.h>
 #include "../wii/boot_wii.h"
+#include "../wii/render_memory_wii.h"
 #include "../wii/chainloader_wii.h"
 static char cooperation_path[1024];
 static char cooperation_status[160] = "Join NZP / PC servers (experimental Wii client).";
@@ -451,6 +452,9 @@ int main(int argc, char **argv)
 		SDL_Quit();
 		return 1;
 	}
+#ifdef PLATFORM_WII
+    Wii_RenderMemoryInit();
+#endif
 	parms.memsize = (int)heap_size;
 	parms.basedir = (char *)base_directory;
 	COM_InitArgv(startup.argc, startup.argv);

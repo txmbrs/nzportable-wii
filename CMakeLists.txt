@@ -14,9 +14,10 @@ target_compile_options(boot PRIVATE -O2 -g -fcommon -fsigned-char -ffunction-sec
 set_source_files_properties(source/images.c source/snd_music.c source/platform/sdl/music_sdl.c
     source/platform/sdl/snd_sdl.c source/platform/sdl/sys_sdl.c source/platform/sdl/common.c
     source/platform/sdl/gl/gl_vidsdl.c source/platform/sdl/net_udp_sdl.c
-    source/platform/wii/boot_wii.c source/platform/wii/in_wii.c PROPERTIES
+    source/platform/wii/boot_wii.c source/platform/wii/in_wii.c
+    source/platform/wii/render_memory_wii.c PROPERTIES
     COMPILE_OPTIONS "-Wall;-Wextra;-Werror=implicit-function-declaration;-Werror=incompatible-pointer-types;-Werror=misleading-indentation")
 target_link_directories(boot PRIVATE /opt/devkitpro/portlibs/wii/lib /opt/devkitpro/portlibs/ppc/lib)
-target_link_options(boot PRIVATE -Wl,--gc-sections)
+target_link_options(boot PRIVATE -Wl,--gc-sections -Wl,--wrap=memalign,--wrap=free,--wrap=realloc)
 target_link_libraries(boot PRIVATE SDL2_mixer SDL2main SDL2 modplug vorbisidec mpg123 opusfile opus FLAC ogg pthread aesnd wiikeyboard opengx png z fat wiiuse bte ogc m stdc++)
 ogc_create_dol(boot)

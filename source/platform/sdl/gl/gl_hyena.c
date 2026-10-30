@@ -28,6 +28,7 @@
  * without it retain the full-page fallback instead of risking stale texels. */
 extern bool _ogx_texture_get_texobj(GLuint name, GXTexObj *object) __attribute__((weak));
 #include "../../../platform/wii/lightmap_wii.h"
+#include "../../../platform/wii/render_memory_wii.h"
 extern void _ogx_bytes_to_texture(const void *data, GLenum format, GLenum type,
     int width, int height, void *dst, uint32_t gx_format,
     int x, int y, int dstpitch) __attribute__((weak));
@@ -304,6 +305,31 @@ Hyena_BackendInitTextureResources(void)
     Hyena_InitTextureSettings("1024", true, HYENA_MAX_TEXTURES);
 }
 
+#ifdef PLATFORM_WII
+static void Wii_TextureErrorsBefore(int texture)
+{
+    GLenum error;
+    static unsigned reports;
+    unsigned count=0;
+    while ((error=glGetError())!=GL_NO_ERROR && count++<8) {
+        if (reports++<8)
+            Sys_Printf("Wii texture: prior GL error 0x%x before %s\n",
+                (unsigned)error,hyena_textures[texture].identifier);
+    }
+}
+static void Wii_TextureCheck(int texture, const char *stage, int width, int height)
+{
+    GLenum error=glGetError();
+    if (error==GL_NO_ERROR) return;
+    Sys_Printf("Wii texture: %s failed for %s (%dx%d), GL error 0x%x\n",
+        stage,hyena_textures[texture].identifier,width,height,(unsigned)error);
+    Wii_RenderMemoryReport("texture upload failure");
+    /* Never advertise an invalid GPU object as a successfully loaded skin. */
+    Sys_Error("Texture upload failed: %s (%dx%d), GL error 0x%x",
+        hyena_textures[texture].identifier,width,height,(unsigned)error);
+}
+#endif
+
 void
 Hyena_BackendUploadLevel(int texture, int level, int storage, int width, int height,
   int x, int y, qboolean replace, const void * pixels)
@@ -313,6 +339,9 @@ Hyena_BackendUploadLevel(int texture, int level, int storage, int width, int hei
       storage == HYE_PIXELS_RGBA4444 ? GL_UNSIGNED_SHORT_4_4_4_4 : GL_UNSIGNED_BYTE;
     GLint alignment;
 
+#ifdef PLATFORM_WII
+    Wii_TextureErrorsBefore(texture);
+#endif
     glBindTexture(GL_TEXTURE_2D, hyena_texture_objects[texture]);
     current_gl_id = hyena_texture_objects[texture];
     // Narrow luminance atlases are byte-aligned, regardless of the previous upload.
@@ -323,6 +352,7 @@ Hyena_BackendUploadLevel(int texture, int level, int storage, int width, int hei
     else
         glTexSubImage2D(GL_TEXTURE_2D, level, x, y, width, height, format, type, pixels);
 #ifdef PLATFORM_WII
+    Wii_TextureCheck(texture,replace?"image allocation/upload":"image update",width,height);
     if (!replace && level == 0 && hyena_textures[texture].lightmap && _ogx_texture_get_texobj) {
         GXTexObj object;
         if (_ogx_texture_get_texobj(hyena_texture_objects[texture], &object)) {
@@ -448,11 +478,27 @@ Hyena_BackendUploadTexture(int texture, const hyena_texture_desc_t * desc)
         desc = &full_page;
     }
 #endif
-    if (!hyena_textures[texture].used)
+    if (!hyena_textures[texture].used) {
+#ifdef PLATFORM_WII
+        Wii_TextureErrorsBefore(texture);
+#endif
         glGenTextures(1, &hyena_texture_objects[texture]);
+#ifdef PLATFORM_WII
+        Wii_TextureCheck(texture,"texture object allocation",desc->width,desc->height);
+#endif
+    }
     Hyena_PrepareTextureUpload(texture, desc, HYE_PIXELS_RGBA5551, Hyena_BackendUploadLevel);
     if (!desc->lightmap)
         glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+#ifdef PLATFORM_WII
+    if (strstr(hyena_textures[texture].identifier,"juggernog") ||
+        strstr(hyena_textures[texture].identifier,"mulekick")) {
+        Sys_Printf("Wii machine skin: %s uploaded %dx%d, texture %d, GL object %u\n",
+            hyena_textures[texture].identifier,hyena_textures[texture].width,
+            hyena_textures[texture].height,texture,(unsigned)hyena_texture_objects[texture]);
+        Wii_RenderMemoryReport("machine skin loaded");
+    }
+#endif
 }
 
 static GLenum
