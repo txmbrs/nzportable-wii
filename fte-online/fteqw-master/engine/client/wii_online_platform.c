@@ -205,6 +205,8 @@ static void flush_online_log(void)
     if(fflush(online_log_file) && !log_warning++)printf("WARNING: online log flush failed.\n");
 }
 void WiiOnline_BeginRuntimeLog(void);
+int WiiOnline_RuntimeLogActive(void);
+int WiiOnline_RuntimeLogActive(void) { return log_runtime; }
 void WiiOnline_BeginRuntimeLog(void)
 {
     flush_online_log();log_runtime=1;
@@ -404,7 +406,7 @@ static void init_platform(int argc, char **argv)
     VIDEO_Configure(boot_mode); VIDEO_SetNextFramebuffer(boot_xfb);
     console_init(boot_xfb,20,20,boot_mode->fbWidth-40,boot_mode->xfbHeight-40,boot_mode->fbWidth*2);
     VIDEO_SetBlack(FALSE); VIDEO_Flush(); VIDEO_WaitVSync();
-    printf("NZPortable Wii Online - startup r18ba\nVIDEO ready.\n");
+    printf("NZPortable Wii Online - startup r18bb\nVIDEO ready.\n");
     fflush(stdout);
     /* The old PPC image is gone, but its IOS USB/Bluetooth device state need
      * not be. Reload the currently running installed IOS before opening FAT or
@@ -437,7 +439,7 @@ static void init_platform(int argc, char **argv)
     FILE *log=fopen(online_log_path,"wb");
     if(log) fclose(log);
     else { printf("WARNING: cannot create online startup log.\n"); log_warning=1; }
-    startup_step("BOOT: FTE r18ba; storage ready; initializing MEM2 before controllers");
+    startup_step("BOOT: FTE r18bb; storage ready; initializing MEM2 before controllers");
     low = ((uintptr_t)SYS_GetArena2Lo()+31)&~(uintptr_t)31;
     high = (uintptr_t)SYS_GetArena2Hi()&~(uintptr_t)31;
     if (high <= low+1024*1024) WiiOnline_Fatal("MEM2 unavailable.");

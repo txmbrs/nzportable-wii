@@ -1,6 +1,7 @@
 #include "quakedef.h"
 #ifdef PLATFORM_WII
 void WiiOnline_Log(const char *text);
+int WiiOnline_RuntimeLogActive(void);
 void WiiOnline_Fatal(const char *text);
 const char *WiiOnline_BaseDir(void);
 void WiiOnline_Return(void);
@@ -179,6 +180,10 @@ void Sys_Printf (char *fmt, ...)
     log_start = Sys_Milliseconds();
     WiiOnline_Log(text);
     log_ms = Sys_Milliseconds()-log_start;
+    /* libogc's stdout console still renders characters into its framebuffer
+     * after OpenGX takes the screen. Keep the RAM log, not the hidden console
+     * rasterization, during gameplay/loading. Startup/fatal output stays live. */
+    if (WiiOnline_RuntimeLogActive()) return;
     output_start = Sys_Milliseconds();
 #endif
 
