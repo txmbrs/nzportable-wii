@@ -3,6 +3,7 @@
 #define PROGSUSED
 struct edict_s;
 #include "progsint.h"
+#include "wii_cooperate.h"
 //#include "crc.h"
 #include "qcc.h"
 
@@ -3089,6 +3090,7 @@ retry:
 		fnc2 = pr_cp_functions;
 		for (i=0 ; i<pr_progs->numfunctions; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 			//qtest functions are bigger, so we can just do this in-place
 			qtest_function_t qtfunc = ((qtest_function_t*)fnc)[i];
 
@@ -3138,6 +3140,7 @@ retry:
 	{
 		for (i=0 ; i<pr_progs->numtypes ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 #ifndef NOENDIAN
 			pr_types[i].type = PRLittleLong(current_progstate->types[i].type);
 			pr_types[i].next = PRLittleLong(current_progstate->types[i].next);
@@ -3159,6 +3162,7 @@ retry:
 		//byteswap the globals and fix name offsets
 		for (i=0 ; i<pr_progs->numglobaldefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 #ifndef NOENDIAN
 			gd16[i].type = PRLittleShort (gd16[i].type);
 			gd16[i].ofs = PRLittleShort (gd16[i].ofs);
@@ -3170,6 +3174,7 @@ retry:
 		//byteswap fields and fix name offets. Also register the fields (which will result in some offset adjustments in the globals segment).
 		for (i=0 ; i<pr_progs->numfielddefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 #ifndef NOENDIAN
 			fld16[i].type = PRLittleShort (fld16[i].type);
 			fld16[i].ofs = PRLittleShort (fld16[i].ofs);
@@ -3220,6 +3225,7 @@ retry:
 		if (reorg && !(progfuncs->funcs.fieldadjust && !prinst.pr_typecurrent))
 		for (i=0 ; i<pr_progs->numfielddefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 			if (pr_types)
 				type = pr_types[fld16[i].type & ~(DEF_SHARED|DEF_SAVEGLOBAL)].type;
 			else
@@ -3233,6 +3239,7 @@ retry:
 		// qtest needs a struct remap
 		for (i=0 ; i<pr_progs->numglobaldefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 			qtest_def_t qtdef = ((qtest_def_t *)pr_globaldefs32)[i];
 
 			pr_globaldefs32[i].type = qtdef.type;
@@ -3241,6 +3248,7 @@ retry:
 		}
 		for (i=0 ; i<pr_progs->numfielddefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 			qtest_def_t qtdef = ((qtest_def_t *)pr_fielddefs32)[i];
 
 			pr_fielddefs32[i].type = qtdef.type;
@@ -3251,6 +3259,7 @@ retry:
 	case PST_FTE32:
 		for (i=0 ; i<pr_progs->numglobaldefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 #ifndef NOENDIAN
 			pr_globaldefs32[i].type = PRLittleLong (pr_globaldefs32[i].type);
 			pr_globaldefs32[i].ofs = PRLittleLong (pr_globaldefs32[i].ofs);
@@ -3261,6 +3270,7 @@ retry:
 
 		for (i=0 ; i<pr_progs->numfielddefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 	#ifndef NOENDIAN
 			pr_fielddefs32[i].type = PRLittleLong (pr_fielddefs32[i].type);
 			pr_fielddefs32[i].ofs = PRLittleLong (pr_fielddefs32[i].ofs);
@@ -3283,6 +3293,7 @@ retry:
 		if (reorg && !(progfuncs->funcs.fieldadjust && !prinst.pr_typecurrent))
 		for (i=0 ; i<pr_progs->numfielddefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 			if (pr_types)
 				type = pr_types[pr_fielddefs32[i].type & ~(DEF_SHARED|DEF_SAVEGLOBAL)].type;
 			else
@@ -3294,6 +3305,7 @@ retry:
 	case PST_UHEXEN2:
 		for (i=0 ; i<pr_progs->numglobaldefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 			pr_globaldefs32[i].type = (unsigned int)PRLittleLong (pr_globaldefs32[i].type)>>16;
 #ifndef NOENDIAN
 			pr_globaldefs32[i].ofs = PRLittleLong (pr_globaldefs32[i].ofs);
@@ -3304,6 +3316,7 @@ retry:
 
 		for (i=0 ; i<pr_progs->numfielddefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 			pr_fielddefs32[i].type = (unsigned int)PRLittleLong (pr_fielddefs32[i].type)>>16;
 #ifndef NOENDIAN
 			pr_fielddefs32[i].ofs = PRLittleLong (pr_fielddefs32[i].ofs);
@@ -3326,6 +3339,7 @@ retry:
 		if (reorg && !(progfuncs->funcs.fieldadjust && !prinst.pr_typecurrent))
 		for (i=0 ; i<pr_progs->numfielddefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 			if (pr_types)
 				type = pr_types[pr_fielddefs32[i].type & ~(DEF_SHARED|DEF_SAVEGLOBAL)].type;
 			else
@@ -3345,6 +3359,7 @@ retry:
 	case PST_QTEST:
 		for (i=0 ; i<pr_progs->numstatements ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 			qtest_statement_t qtst = ((qtest_statement_t*)st16)[i];
 
 			st16[i].op = PRLittleShort(qtst.op);
@@ -3359,6 +3374,7 @@ retry:
 	case PST_DEFAULT:
 		for (i=0 ; i<pr_progs->numstatements ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 #ifndef NOENDIAN
 			st16[i].op = PRLittleShort(st16[i].op);
 			st16[i].a = PRLittleShort(st16[i].a);
@@ -3381,6 +3397,7 @@ retry:
 		hexencalling = true;
 		for (i=0 ; i<pr_progs->numstatements ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 			pr_statements32[i].op = (unsigned int)PRLittleLong(pr_statements32[i].op)>>16;
 #ifndef NOENDIAN
 			pr_statements32[i].a = PRLittleLong(pr_statements32[i].a);
@@ -3394,6 +3411,7 @@ retry:
 	case PST_FTE32:
 		for (i=0 ; i<pr_progs->numstatements ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 #ifndef NOENDIAN
 			pr_statements32[i].op = PRLittleLong(pr_statements32[i].op);
 			pr_statements32[i].a = PRLittleLong(pr_statements32[i].a);
@@ -3443,6 +3461,7 @@ retry:
 				memset(basictypetable, 0, sizeof(*basictypetable) * pr_progs->numglobals);
 				for (i = 0; i < pr_progs->numstatements; i++)
 				{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 					switch(st[i].op)
 					{
 					case OP_ADDRESS:
@@ -3480,6 +3499,7 @@ retry:
 
 				for (i = 0; i < pr_progs->numglobaldefs; i++)
 				{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 					ddef16_t *gd = gd16+i;
 					switch(gd->type & ~(DEF_SAVEGLOBAL|DEF_SHARED))
 					{
@@ -3491,6 +3511,7 @@ retry:
 
 				for (i = 0; i < pr_progs->numglobals; i++)
 				{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 					if (basictypetable[i] == ev_field)
 						QC_AddFieldGlobal(&progfuncs->funcs, (int *)glob + i);
 				}
@@ -3512,6 +3533,7 @@ retry:
 	case PST_KKQWSV:
 		for (i=0 ; i<pr_progs->numglobaldefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 			if (pr_types)
 				type = pr_types[gd16[i].type & ~(DEF_SHARED|DEF_SAVEGLOBAL)].type;
 			else
@@ -3560,6 +3582,7 @@ retry:
 	case PST_UHEXEN2:
 		for (i=0 ; i<pr_progs->numglobaldefs ; i++)
 		{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 			if (pr_types)
 				type = pr_types[pr_globaldefs32[i].type & ~(DEF_SHARED|DEF_SAVEGLOBAL)].type;
 			else
@@ -3597,6 +3620,7 @@ retry:
 			s = &((char *)pr_progs)[pr_progs->ofsbodylessfuncs];
 			for (i = 0; i < pr_progs->numbodylessfuncs; i++)
 			{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 				d32 = ED_FindGlobal32(progfuncs, s);
 				d2 = ED_FindGlobalOfsFromProgs(progfuncs, &pr_progstate[0], s, ev_function);
 				if (!d2)
@@ -3649,6 +3673,7 @@ retry:
 			s = &((char *)pr_progs)[pr_progs->ofsbodylessfuncs];
 			for (i = 0; i < pr_progs->numbodylessfuncs; i++)
 			{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 				d16 = ED_FindGlobal16(progfuncs, s);
 				if (!d16)
 				{
@@ -3675,6 +3700,7 @@ retry:
 			s = &((char *)pr_progs)[pr_progs->ofsbodylessfuncs];
 			for (i = 0; i < pr_progs->numbodylessfuncs; i++)
 			{
+        WII_QC_COOPERATE(&progfuncs->funcs,i,255u);
 				d32 = ED_FindGlobal32(progfuncs, s);
 				if (!d32)
 				{

@@ -1,5 +1,6 @@
 #define PROGSUSED
 #include "progsint.h"
+#include "wii_cooperate.h"
 //#include "editor.h"
 
 #if __STDC_VERSION__ >= 199901L
@@ -1629,6 +1630,9 @@ static int PR_NoDebugVM(progfuncs_t *fte_restrict progfuncs)
 static int PR_ExecuteCode16 (progfuncs_t *fte_restrict progfuncs, int s, int *fte_restrict runaway)
 {
 	unsigned int switchcomparison = 0;
+#if defined(PLATFORM_WII) && defined(CLIENTONLY)
+    unsigned int wii_cooperate_counter=0;
+#endif
 	const dstatement16_t	*fte_restrict st;
 	mfunction_t	*fte_restrict newf;
 	int		i;
@@ -1685,6 +1689,9 @@ static int PR_ExecuteCode32 (progfuncs_t *fte_restrict progfuncs, int s, int *ft
 #else
 
 	unsigned int switchcomparison = 0;
+#if defined(PLATFORM_WII) && defined(CLIENTONLY)
+    unsigned int wii_cooperate_counter=0;
+#endif
 	const dstatement32_t	*fte_restrict st;
 	mfunction_t	*fte_restrict newf;
 	int		i;

@@ -48,6 +48,9 @@
 
 //rely upon just st
 {
+#if defined(PLATFORM_WII) && defined(CLIENTONLY)
+    WII_QC_COOPERATE(&progfuncs->funcs,++wii_cooperate_counter,4095u);
+#endif
 #ifdef DEBUGABLE
 	s = st-pr_statements;
 	s+=1;

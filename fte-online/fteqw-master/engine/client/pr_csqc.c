@@ -52,6 +52,25 @@ extern cvar_t sv_demo_write_csqc;
 
 
 static pubprogfuncs_t *csqcprogs;
+#ifdef PLATFORM_WII
+void CL_WiiQCLibPoll(pubprogfuncs_t *vm);
+void CL_WiiQCLibPoll(pubprogfuncs_t *vm)
+{
+    /* Never service menu/other VMs or normal gameplay through this hook.
+     * Existing keepalive gates main-thread/reentry/parser ownership and only
+     * queues received game packets; it cannot execute QC or parse game state. */
+    if (vm && vm==csqcprogs && cls.state>=ca_connected && cls.state<ca_active)
+        CL_WiiLoadingKeepalive();
+}
+#define WII_CSQC_STEP(label,statement) do { \
+    unsigned int start=Sys_Milliseconds(); \
+    CL_WiiQCLibPoll(csqcprogs); statement; CL_WiiQCLibPoll(csqcprogs); \
+    Con_Printf("PERF CSQC: %s took %u ms\n",label,Sys_Milliseconds()-start); \
+} while(0)
+#else
+#define WII_CSQC_STEP(label,statement) do { statement; } while(0)
+#endif
+
 
 typedef struct csqctreadstate_s {
 	float resumetime;
@@ -8260,7 +8279,7 @@ qboolean CSQC_Init (qboolean anycsqc, const char *csprogsname, unsigned int chec
             return false;
         }
 #endif
-		PR_Configure(csqcprogs, PR_ReadBytesString(pr_csqc_memsize.string), MAX_PROGS, pr_enable_profiling.ival);
+		WII_CSQC_STEP("VM configure",PR_Configure(csqcprogs, PR_ReadBytesString(pr_csqc_memsize.string), MAX_PROGS, pr_enable_profiling.ival));
 #if defined(PLATFORM_WII) && defined(MENU_DAT)
         if (MP_WiiMenuSuspended())
         {
@@ -8276,8 +8295,8 @@ qboolean CSQC_Init (qboolean anycsqc, const char *csprogsname, unsigned int chec
 		csqc_world.Event_ContentsTransition = CSQC_Event_ContentsTransition;
 		csqc_world.Get_CModel = CSQC_World_ModelForIndex;
 		csqc_world.Get_FrameState = CSQC_World_GetFrameState;
-		World_ClearWorld(&csqc_world, false);
-		CSQC_InitFields();	//let the qclib know the field order that the engine needs.
+		WII_CSQC_STEP("world clear",World_ClearWorld(&csqc_world, false));
+		WII_CSQC_STEP("field setup",CSQC_InitFields());	//let the qclib know the field order that the engine needs.
 
 		if (setjmp(csqc_abort))
 		{
@@ -8295,7 +8314,7 @@ qboolean CSQC_Init (qboolean anycsqc, const char *csprogsname, unsigned int chec
 
 		if (!csqc_nogameaccess)
 		{	//only load csprogs if its expected to be able to work without failing for game access reasons
-			csprogsnum = PR_LoadProgs(csqcprogs, csprogs_checkname);
+			WII_CSQC_STEP("main bytecode load",csprogsnum = PR_LoadProgs(csqcprogs, csprogs_checkname));
 			if (csprogsnum >= 0)
 				Con_DPrintf("Loaded csprogs.dat\n");
 			else if (csprogs_checksum || csprogs_checksize)
@@ -8306,7 +8325,7 @@ qboolean CSQC_Init (qboolean anycsqc, const char *csprogsname, unsigned int chec
 			;	//using csaddon directly... map editor mode?
 		else if (csqc_singlecheats || anycsqc)
 		{
-			csaddonnum = PR_LoadProgs(csqcprogs, "csaddon.dat");
+			WII_CSQC_STEP("addon bytecode load",csaddonnum = PR_LoadProgs(csqcprogs, "csaddon.dat"));
 			if (csaddonnum >= 0)
 				Con_DPrintf("loaded csaddon.dat...\n");
 			else
@@ -8360,7 +8379,7 @@ qboolean CSQC_Init (qboolean anycsqc, const char *csprogsname, unsigned int chec
 			{
 				void *pr_globals = PR_globals(csqcprogs, PR_CURRENT);
 				G_PROG(OFS_PARM0) = i-1;
-				PR_ExecuteProgram(csqcprogs, f);
+				WII_CSQC_STEP("module initialization",PR_ExecuteProgram(csqcprogs, f));
 			}
 		}
 
@@ -8380,7 +8399,7 @@ qboolean CSQC_Init (qboolean anycsqc, const char *csprogsname, unsigned int chec
 			{
 				void *pr_globals = PR_globals(csqcprogs, PR_CURRENT);
 				G_PROG(OFS_PARM0) = i-1;
-				PR_ExecuteProgram(csqcprogs, f);
+				WII_CSQC_STEP("module initialization",PR_ExecuteProgram(csqcprogs, f));
 			}
 		}
 
@@ -8411,7 +8430,7 @@ qboolean CSQC_Init (qboolean anycsqc, const char *csprogsname, unsigned int chec
 			G_FLOAT(OFS_PARM0) = CSQC_API_VERSION;	//api version
 			(((string_t *)pr_globals)[OFS_PARM1] = PR_TempString(csqcprogs, FULLENGINENAME));
 			G_FLOAT(OFS_PARM2) = version_number();
-			PR_ExecuteProgram(csqcprogs, csqcg.CSQC_Init);
+			WII_CSQC_STEP("CSQC_Init callback",PR_ExecuteProgram(csqcprogs, csqcg.CSQC_Init));
 		}
 /*
 		{
@@ -8528,7 +8547,7 @@ void CSQC_WorldLoaded(void)
 			G_FLOAT(OFS_PARM0) = CSQC_API_VERSION;	//api version
 			(((string_t *)pr_globals)[OFS_PARM1] = PR_TempString(csqcprogs, FULLENGINENAME));
 			G_FLOAT(OFS_PARM2) = version_number();
-			PR_ExecuteProgram(csqcprogs, csqcg.CSQC_Init);
+			WII_CSQC_STEP("CSQC_Init callback",PR_ExecuteProgram(csqcprogs, csqcg.CSQC_Init));
 		}
 	}
 
