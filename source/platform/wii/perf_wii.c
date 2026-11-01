@@ -2,8 +2,8 @@
 #include "../../nzportable_def.h"
 #include "perf_wii.h"
 
-/* One summary per 600 active frames. Set wii_perf 0 to disable completely. */
-static cvar_t wii_perf = {"wii_perf", "1"};
+/* One summary per 600 active frames. Set wii_perf 1 to enable profiling. */
+static cvar_t wii_perf = {"wii_perf", "0"};
 static qboolean collecting;
 static unsigned frames, calls, hits, vertices_total;
 static double frame_begin, frame_sum, frame_max, sums[WII_PERF_COUNT];

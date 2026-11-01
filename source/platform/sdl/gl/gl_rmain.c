@@ -686,7 +686,10 @@ void R_SetupAliasBlendedFrame (int frame, aliashdr_t *paliashdr, entity_t* e)
 		if (cl.paused || blend > 1) blend = 1;
 		if (blend < 0) blend = 0;
 
-		if (blend == 1)
+
+		if (blend <= 0.0f || e->pose1 == pose)
+			GL_DrawAliasFrame (paliashdr, e->pose1);
+		else if (blend >= 1.0f)
 			GL_DrawAliasFrame (paliashdr, pose);
 		else
 			GL_DrawAliasBlendedFrame (paliashdr, e->pose1, e->pose2, blend);
@@ -707,6 +710,7 @@ void R_DrawZombieLimb (entity_t *e, int which)
 	model_t		*clmodel;
 	aliashdr_t	*paliashdr;
 	entity_t 	*limb_ent;
+	entity_t	*saved_current;
 
 	switch(which) {
 		case 1:
@@ -727,20 +731,15 @@ void R_DrawZombieLimb (entity_t *e, int which)
 	if (clmodel == NULL)
 		return;
 
+	VectorCopy(e->origin, limb_ent->origin);
+	limb_ent->frame = e->frame;
+
 	VectorCopy(e->origin, r_entorigin);
 	VectorSubtract(r_origin, r_entorigin, modelorg);
 
 	// locate the proper data
 	paliashdr = (aliashdr_t *)Mod_Extradata(clmodel);//e->model
 	c_alias_polys += paliashdr->numtris;
-
-	//Shpuld
-	if(r_model_brightness.value)
-	{
-		lightcolor[0] += 48;
-		lightcolor[1] += 48;
-		lightcolor[2] += 48;
-	}
 
 	glPushMatrix ();
 	R_RotateForEntity (e, e->scale);
@@ -755,8 +754,11 @@ void R_DrawZombieLimb (entity_t *e, int which)
 	if (gl_affinemodels.value)
 		glHint (GL_PERSPECTIVE_CORRECTION_HINT, GL_FASTEST);
 
-	IgnoreInterpolatioFrame(e, paliashdr);
-	R_SetupAliasBlendedFrame (currententity->frame, paliashdr, e);
+	saved_current = currententity;
+	currententity = limb_ent;
+	IgnoreInterpolatioFrame(limb_ent, paliashdr);
+	R_SetupAliasBlendedFrame (limb_ent->frame, paliashdr, limb_ent);
+	currententity = saved_current;
 
 	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
@@ -999,10 +1001,18 @@ void R_DrawAliasModel (entity_t *e)
 	//
 	if(doZHack && specChar == '%')
 	{
+		static model_t * zhack_worldmodel;
+		static model_t * zfull_model;
+		static model_t * zcfull_model;
+		if (zhack_worldmodel != cl.worldmodel) {
+			zhack_worldmodel = cl.worldmodel;
+			zfull_model = Mod_FindName("models/ai/zfull.mdl");
+			zcfull_model = Mod_FindName("models/ai/zcfull.mdl");
+		}
 		if(clmodel->name[12] == 'c')
-			paliashdr = (aliashdr_t *) Mod_Extradata(Mod_FindName("models/ai/zcfull.mdl"));
+			paliashdr = (aliashdr_t *) Mod_Extradata(zcfull_model ? zcfull_model : Mod_FindName("models/ai/zcfull.mdl"));
 		else
-			paliashdr = (aliashdr_t *) Mod_Extradata(Mod_FindName("models/ai/zfull.mdl"));
+			paliashdr = (aliashdr_t *) Mod_Extradata(zfull_model ? zfull_model : Mod_FindName("models/ai/zfull.mdl"));
 	}
 	else
 		paliashdr = (aliashdr_t *)Mod_Extradata (e->model);

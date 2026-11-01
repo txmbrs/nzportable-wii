@@ -450,6 +450,9 @@ void R_RenderBrushPoly (msurface_t *fa)
 
 	if (fa->flags & SURF_DRAWTURB)
 	{	// warp texture, no lightmaps
+#ifdef PLATFORM_WII
+		Hyena_EndLightmapped();
+#endif
 		EmitWaterPolys (fa);
 		return;
 	}
@@ -458,6 +461,9 @@ void R_RenderBrushPoly (msurface_t *fa)
 		return;
 	
 	if (fa->flags & TEXFLAG_LIGHT) {
+#ifdef PLATFORM_WII
+		Hyena_EndLightmapped();
+#endif
 		DrawGLPoly(fa->polys);
 		return;
 	}
@@ -481,13 +487,13 @@ void R_RenderBrushPoly (msurface_t *fa)
         uv.stride = VERTEXSIZE * sizeof(float);
         Hyena_BeginLightmapped(lightmap, &uv);
         Hyena_DrawArrays(HYE_TRIANGLE_FAN, &arrays, poly->numverts);
-        Hyena_EndLightmapped();
         if (choosealpha) {
             glDisable(GL_ALPHA_TEST);
             glDisable(GL_MODULATE);
         }
         return;
     }
+    Hyena_EndLightmapped();
 #endif
 	if (fa->flags & SURF_UNDERWATER)
 		DrawGLWaterPoly (fa->polys);
@@ -632,6 +638,7 @@ void R_DrawBrushModel (entity_t *e)
 	//
 	// draw texture
 	//
+	Hyena_BeginArrays(HYE_ARRAY_POSITION | HYE_ARRAY_UV);
 	for (i=0 ; i<clmodel->nummodelsurfaces ; i++, psurf++)
 	{
 	// find which side of the node we are on
@@ -646,6 +653,10 @@ void R_DrawBrushModel (entity_t *e)
 			R_RenderBrushPoly (psurf);
 		}
 	}
+#ifdef PLATFORM_WII
+	Hyena_EndLightmapped();
+#endif
+	Hyena_EndArrays();
 
 	R_BlendLightmaps();
 	glPopMatrix ();

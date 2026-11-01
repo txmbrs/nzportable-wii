@@ -1,0 +1,30 @@
+wsl: Failed to translate 'C:Program Files\nodejs'
+PASS: actual image resampler allocation failure, caller buffer, padded sizes, invalid dimensions, original pixels preserved
+PASS: actual light cache at large signed coordinates, same-frame reuse, explicit frame/map/style invalidation
+PASS: bounded memory-only log ring, wrap, overflow accounting, byte order and drain
+PASS: actual binding setters and menu swap, occupied UNBOUND rejection, long commands, hold/double swap, exact matching, cancel and dirty tracking
+PASS: actual startup IN_Init reaches Wii cvar/command registration before controller polling
+PASS: actual DTLS transmit/tick, repeated WANT_WRITE with stable buffers, bounded FIFO/full queue, MTU, wraparound, failure; Netchan lost request/lost ACK/both/probes
+PASS: 2148 draws, exact interpolation, cache hits, UV immutability, allocation fallback, object/memory limits, relocation and teardown
+PASS: 2150 draws, exact interpolation, cache hits, UV immutability, allocation fallback, object/memory limits, relocation and teardown
+PASS: double tap, held walking, timeout, slow push, blocked input, source change, backwards/sideways, jitter, disconnect, clock wrap
+PASS: dirty normal/hold/double-tap bindings reset, old held action released, physical defaults restored, controls-only cvars, saving, remote rejection, idempotence
+PASS: bounded two-picture residency, repeated draw reuse, 1000 preview changes, background rotation, GPU fences, stale ID protection, missing files and reset
+/tmp/nzp-render-memory-73wfjzaa/test.c: In function ‘Wii_RenderMemoryReport’:
+/tmp/nzp-render-memory-73wfjzaa/test.c:141:12: warning: ‘mallinfo’ is deprecated [-Wdeprecated-declarations]
+  141 |     struct mallinfo libc=mallinfo();
+      |            ^~~~~~~~
+In file included from /tmp/nzp-render-memory-73wfjzaa/test.c:44:
+/usr/include/malloc.h:114:24: note: declared here
+  114 | extern struct mallinfo mallinfo (void) __THROW __MALLOC_DEPRECATED;
+      |                        ^~~~~~~~
+PASS: aligned MEM2 ownership, cold/libc pointers, realloc preservation/failure, overflow, fallback, teardown and engine-hunk separation
+PASS: unavailable/failed MEM2 leaves arena unchanged and uses libc
+PASS: unavailable/failed MEM2 leaves arena unchanged and uses libc
+PASS: 65536 packed colors, 1000 strided/tiled updates, full precision, pixel-store state, filtering, bounds and fallback guards
+PASS: converter mismatch disables fast path
+PASS: stale GL error does not reject valid upload; real generate/bind/upload failures retain fallback; padded uploads and cleanup verified
+
+FINAL TRANSPORT CHECK
+wsl: Failed to translate 'C:Program Files\nodejs'
+PASS: actual DTLS transmit/tick, repeated WANT_WRITE with stable buffers, bounded FIFO/full queue, MTU, wraparound, failure; Netchan lost request/lost ACK/both/probes

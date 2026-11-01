@@ -463,9 +463,17 @@ void Key_SetBinding (int keynum, char *binding)
 {
 	char	*new;
 	int		l;
+#ifdef PLATFORM_WII
+	qboolean changed;
+#endif
 			
-	if (keynum == -1)
+	if (keynum < 0 || keynum >= MAX_KEYS || !binding)
 		return;
+	if (keybindings[keynum] && !strcmp(keybindings[keynum],binding)) return;
+
+#ifdef PLATFORM_WII
+	changed = !keybindings[keynum] || strcmp(keybindings[keynum], binding) != 0;
+#endif
 
 // free old bindings
 	if (keybindings[keynum]) {
@@ -478,7 +486,11 @@ void Key_SetBinding (int keynum, char *binding)
 	new = Z_Malloc (l+1);
 	Q_strcpy (new, binding);
 	new[l] = 0;
-	keybindings[keynum] = new;	
+	keybindings[keynum] = new;
+#ifdef PLATFORM_WII
+	if (changed && host_initialized)
+		cvar_archive_revision++;
+#endif
 }
 
 /*
@@ -491,8 +503,9 @@ void Key_SetDTBinding (int keynum, char *binding)
 	char	*new;
 	int		l;
 
-	if (keynum == -1)
+	if (keynum < 0 || keynum >= MAX_KEYS || !binding)
 		return;
+	if (dtbindings[keynum] && !strcmp(dtbindings[keynum],binding)) return;
 
 // free old bindings
 	if (dtbindings[keynum]) {
@@ -506,6 +519,9 @@ void Key_SetDTBinding (int keynum, char *binding)
 	Q_strcpy (new, binding);
 	new[l] = 0;
 	dtbindings[keynum] = new;
+#ifdef PLATFORM_WII
+    if (host_initialized) ++cvar_archive_revision;
+#endif
 }
 
 
@@ -519,8 +535,9 @@ void Key_SetHoldBinding (int keynum, char *binding)
 	char *new;
 	int l;
 
-	if (keynum == -1)
+	if (keynum < 0 || keynum >= MAX_KEYS || !binding)
 		return;
+	if (holdbindings[keynum] && !strcmp(holdbindings[keynum],binding)) return;
 	if (holdbindings[keynum]) {
 		Z_Free (holdbindings[keynum]);
 		holdbindings[keynum] = NULL;
@@ -530,6 +547,9 @@ void Key_SetHoldBinding (int keynum, char *binding)
 	Q_strcpy (new, binding);
 	new[l] = 0;
 	holdbindings[keynum] = new;
+#ifdef PLATFORM_WII
+    if (host_initialized) ++cvar_archive_revision;
+#endif
 }
 
 /*

@@ -1835,7 +1835,7 @@ void CL_RequestNextDownload (void)
 #endif
                 )
 			{
-				if ((fl & DLLF_OVERWRITE) || !CL_CheckFile (dl->localname))
+				if ((fl & DLLF_OVERWRITE) || (!CL_CheckDLFile(dl->localname) && !CL_CheckFile (dl->localname)))
 				{
 					CL_SendDownloadStartRequest(dl->rname, dl->localname, fl);
 					return;

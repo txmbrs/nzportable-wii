@@ -22,7 +22,7 @@ static inline int Wii_SprintGesture(wii_sprint_gesture_t *s, unsigned source,
     }
     if (!s->armed) return 0;
     if (!s->moving) {s->departure=now; s->moving=1;}
-    if (y<0.0f || x < -0.6f || x > 0.6f ||
+    if (y<-0.3f || x < -0.6f || x > 0.6f ||
         (uint32_t)(now-s->departure)>250u) {
         s->armed=s->pending=0;
         return 0;

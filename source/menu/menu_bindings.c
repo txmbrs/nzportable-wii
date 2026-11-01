@@ -27,6 +27,7 @@ int         bindings_currentwatch = -1;
 
 qboolean    in_bind = false;
 char        *current_command;
+static char *binding_status="";
 #ifdef PLATFORM_WII
 static void Menu_ToggleStickSprint(void)
 {
@@ -54,11 +55,39 @@ void Menu_Bindings_Set (void)
 
 void Menu_WaitForKeybind (int key)
 {
+    int keys[2],old_key,i;
+    char *copy[5]={0};
+    const char *values[5];
+    if (key==K_ESCAPE || key==K_START || key<0 || key>=MAX_KEYS || !current_command || !current_command[0])
+        goto done;
+    Menu_FindKeysForCommand(current_command,keys); old_key=keys[0];
+    if (keybindings[key] && !strcmp(keybindings[key],current_command)) goto done;
+    if (old_key<0 && ((keybindings[key] && *keybindings[key]) ||
+        (holdbindings[key] && *holdbindings[key]) || (dtbindings[key] && *dtbindings[key]))) {
+        binding_status="BUTTON IN USE - CHOOSE ANOTHER";
+        return; /* Keep listening, and preserve the occupied action. */
+    }
+    values[0]=keybindings[key]; values[1]=holdbindings[key]; values[2]=dtbindings[key];
+    values[3]=old_key>=0?holdbindings[old_key]:NULL;
+    values[4]=old_key>=0?dtbindings[old_key]:NULL;
+    for (i=0;i<5;++i) {
+        const char *v=values[i]?values[i]:"";
+        copy[i]=malloc(strlen(v)+1);
+        if (!copy[i]) {binding_status="NOT ENOUGH MEMORY TO CHANGE BIND";goto cleanup;}
+        strcpy(copy[i],v);
+    }
     Menu_UnbindCommand(current_command);
-    Key_SetBinding(key, current_command);
-    current_command = "";
-    in_bind = false;
-    bindings_currentwatch = -1;
+    Key_SetBinding(key,current_command);
+    Key_SetHoldBinding(key,copy[3]); Key_SetDTBinding(key,copy[4]);
+    if (old_key>=0) {
+        Key_SetBinding(old_key,copy[0]);
+        Key_SetHoldBinding(old_key,copy[1]); Key_SetDTBinding(old_key,copy[2]);
+    }
+    binding_status="";
+cleanup:
+    for (i=0;i<5;++i) free(copy[i]);
+done:
+    current_command=""; in_bind=false; bindings_currentwatch=-1;
 }
 
 void Menu_Bindings_PrintBindForCommand (int order, char *command)
@@ -87,6 +116,7 @@ void Menu_Bindings_SetBindListen (void)
 {
     Menu_SetSound(MENU_SND_ENTER);
     in_bind = true;
+    binding_status="";
     bindings_currentwatch = current_menu.cursor+1;
 }
 
@@ -134,6 +164,7 @@ void Menu_Bindings_Draw (void)
 
     // Map panel makes the background darker
     Menu_DrawMapPanel();
+    if (*binding_status) Menu_DrawStringCentered(160,194,binding_status,255,200,0,255);
 
     // Page 1
     if (current_bindings_page == 0) {

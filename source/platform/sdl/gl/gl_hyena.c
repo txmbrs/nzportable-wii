@@ -101,10 +101,29 @@ Hyena_FlushMatrices(void)
 {
 }
 
+static vertex_t * hyena_scratch_vertices;
+static int hyena_scratch_capacity;
+
+static void
+Hyena_GLUnbindBuffers(void)
+{
+#ifdef PLATFORM_WII
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+#endif
+}
+
 vertex_t *
 Hyena_AllocateMemoryForVertices(int count)
 {
-    return (vertex_t *) malloc(sizeof(vertex_t) * count);
+    if (count > hyena_scratch_capacity) {
+        int new_cap = count < 256 ? 256 : count;
+        void * resized = realloc(hyena_scratch_vertices, sizeof(vertex_t) * new_cap);
+        if (!resized)
+            Sys_Error("Hyena_AllocateMemoryForVertices: out of memory");
+        hyena_scratch_vertices = (vertex_t *) resized;
+        hyena_scratch_capacity = new_cap;
+    }
+    return hyena_scratch_vertices;
 }
 
 void
@@ -133,11 +152,15 @@ Hyena_DrawVertices(vertex_t * vertices, int count, int texture_precision, int ve
 
     (void) vertex_precision;
 
-    for (i = 0; i < count; ++i) {
-        vertices[i].xyz.x = vertices[i].xyz.x * hyena_scale[0] + hyena_translation[0];
-        vertices[i].xyz.y = vertices[i].xyz.y * hyena_scale[1] + hyena_translation[1];
-        vertices[i].xyz.z = vertices[i].xyz.z * hyena_scale[2] + hyena_translation[2];
+    if (hyena_scale[0] != 1.0f || hyena_scale[1] != 1.0f || hyena_scale[2] != 1.0f ||
+        hyena_translation[0] != 0.0f || hyena_translation[1] != 0.0f || hyena_translation[2] != 0.0f) {
+        for (i = 0; i < count; ++i) {
+            vertices[i].xyz.x = vertices[i].xyz.x * hyena_scale[0] + hyena_translation[0];
+            vertices[i].xyz.y = vertices[i].xyz.y * hyena_scale[1] + hyena_translation[1];
+            vertices[i].xyz.z = vertices[i].xyz.z * hyena_scale[2] + hyena_translation[2];
+        }
     }
+    Hyena_GLUnbindBuffers();
     glEnableClientState(GL_VERTEX_ARRAY);
     glVertexPointer(3, GL_FLOAT, sizeof(*vertices), &vertices[0].xyz);
     if (textured) {
@@ -148,7 +171,6 @@ Hyena_DrawVertices(vertex_t * vertices, int count, int texture_precision, int ve
     if (textured)
         glDisableClientState(GL_TEXTURE_COORD_ARRAY);
     glDisableClientState(GL_VERTEX_ARRAY);
-    free(vertices);
 }
 
 void
@@ -218,6 +240,7 @@ Hyena_Draw2DQuads(const hyena_2d_quad_t * quads, int count, int texture, unsigne
         glDisable(GL_BLEND);
     }
     glDisable(GL_ALPHA_TEST);
+    Hyena_GLUnbindBuffers();
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_COLOR_ARRAY);
     glVertexPointer(3, GL_FLOAT, 0, hyena_2d_positions);
@@ -237,14 +260,6 @@ Hyena_Draw2DQuads(const hyena_2d_quad_t * quads, int count, int texture, unsigne
     glEnable(GL_ALPHA_TEST);
 } /* Hyena_Draw2DQuads */
 
-static void
-Hyena_GLUnbindBuffers(void)
-{
-#ifdef PLATFORM_WII
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-#endif
-}
-
 void
 Hyena_FogSet(bool is_world_geometry, float start, float end, float red, float green, float blue, float alpha)
 {
@@ -258,6 +273,9 @@ Hyena_FogSet(bool is_world_geometry, float start, float end, float red, float gr
 
 static GLuint hyena_texture_objects[HYENA_MAX_TEXTURES];
 static GLuint current_gl_id;
+#ifdef PLATFORM_WII
+static int lightmap_bound_texture = -1;
+#endif
 
 static int
 Hyena_GLFilter(int filter)
@@ -296,6 +314,10 @@ Hyena_BackendDestroyTexture(int texture)
     glDeleteTextures(1, &hyena_texture_objects[texture]);
     hyena_texture_objects[texture] = 0;
     current_gl_id = (GLuint) - 1;
+#ifdef PLATFORM_WII
+    if (lightmap_bound_texture == texture)
+        lightmap_bound_texture = -1;
+#endif
 }
 
 void
@@ -651,30 +673,19 @@ void
 Hyena_DrawIndexedTriangles(const hyena_colored_vertex_t * vertices, int vertex_count, const unsigned short * indices,
   int index_count, qboolean textured)
 {
-    static float positions[1024 * 3];
-    static float texcoords[1024 * 2];
-    static byte colors[1024 * 4];
-    int i;
-
     if (!index_count)
         return;
 
     if (vertex_count > 1024)
         Sys_Error("Hyena: indexed batch is too large");
-    for (i = 0; i < vertex_count; ++i) {
-        memcpy(positions + i * 3, vertices[i].xyz, sizeof(vertices[i].xyz));
-        memcpy(colors + i * 4, vertices[i].color, sizeof(vertices[i].color));
-        if (textured)
-            memcpy(texcoords + i * 2, vertices[i].uv, sizeof(vertices[i].uv));
-    }
     Hyena_GLUnbindBuffers();
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_COLOR_ARRAY);
-    glVertexPointer(3, GL_FLOAT, 0, positions);
-    glColorPointer(4, GL_UNSIGNED_BYTE, 0, colors);
+    glVertexPointer(3, GL_FLOAT, sizeof(*vertices), &vertices[0].xyz);
+    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(*vertices), &vertices[0].color);
     if (textured) {
         glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-        glTexCoordPointer(2, GL_FLOAT, 0, texcoords);
+        glTexCoordPointer(2, GL_FLOAT, sizeof(*vertices), &vertices[0].uv);
     }
     glDrawElements(GL_TRIANGLES, index_count, GL_UNSIGNED_SHORT, indices);
     if (textured)
@@ -698,7 +709,11 @@ static int hyena_arrays_mask;
 size_t
 Hyena_StaticVertexBudget(void)
 {
+#ifdef PLATFORM_WII
+    return 2u * 1024 * 1024;
+#else
     return 0;
+#endif
 }
 
 qboolean
@@ -800,7 +815,13 @@ Hyena_ArrayPointer(const hyena_array_t * array)
 #ifdef PLATFORM_WII
 /* Keep Quake's 2*diffuse*lightmap equation without GL_RGB_SCALE, which
  * this OpenGX version does not implement. Unit 1 multiplies; unit 2 adds
- * PREVIOUS to itself. Both preserve diffuse alpha for cutout textures. */
+ * PREVIOUS to itself. Both preserve diffuse alpha for cutout textures.
+ * GX hardware fog runs in the Pixel Engine after all TEV stages complete,
+ * so single-pass combining works with fog as long as the true fog color is set. */
+static qboolean lightmap_env_initialized;
+static qboolean lightmap_units_active;
+static hyena_array_t lightmap_bound_uv;
+
 qboolean
 Hyena_CanCombineLightmaps(void)
 {
@@ -809,55 +830,96 @@ Hyena_CanCombineLightmaps(void)
         glGetIntegerv(GL_MAX_TEXTURE_UNITS, &units);
         Sys_Printf("Wii lightmaps: %d texture units; single-pass needs 3\n", units);
     }
-    return units >= 3 && !glIsEnabled(GL_FOG) && !glIsEnabled(GL_BLEND);
+    return units >= 3 && !glIsEnabled(GL_BLEND);
 }
 
 void
 Hyena_BeginLightmapped(int texture, const hyena_array_t *uv)
 {
     static qboolean announced;
-    int unit;
     if (!announced) {
         Sys_Printf("Wii lightmaps: single-pass 2 * diffuse * lightmap enabled\n");
         announced = true;
     }
-    for (unit = 1; unit <= 2; ++unit) {
-        const void *ptr;
-        glActiveTexture(GL_TEXTURE0 + unit);
-        glBindTexture(GL_TEXTURE_2D, hyena_texture_objects[texture]);
+    if (!lightmap_env_initialized) {
+        int unit;
+        for (unit = 1; unit <= 2; ++unit) {
+            glActiveTexture(GL_TEXTURE0 + unit);
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+            glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, unit == 1 ? GL_MODULATE : GL_ADD);
+            glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_PREVIOUS);
+            glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, unit == 1 ? GL_TEXTURE : GL_PREVIOUS);
+            glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
+            glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
+            glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
+            glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PREVIOUS);
+            glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+        }
+        /* Unit 2 only computes PREVIOUS + PREVIOUS and never samples a texture.
+         * Hardware texgen satisfies OpenGX's coordinate check without adding a
+         * redundant per-vertex OgxArrayReader on GX_VA_TEX2. */
+        glActiveTexture(GL_TEXTURE2);
+        glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
+        glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
+        glActiveTexture(GL_TEXTURE0);
+        lightmap_env_initialized = true;
+    }
+    if (!lightmap_units_active) {
+        glActiveTexture(GL_TEXTURE1);
         glEnable(GL_TEXTURE_2D);
-        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, unit == 1 ? GL_MODULATE : GL_ADD);
-        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_PREVIOUS);
-        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, unit == 1 ? GL_TEXTURE : GL_PREVIOUS);
-        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
-        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
-        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PREVIOUS);
-        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-        glClientActiveTexture(GL_TEXTURE0 + unit);
+        glClientActiveTexture(GL_TEXTURE1);
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+        glActiveTexture(GL_TEXTURE2);
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_TEXTURE_GEN_S);
+        glEnable(GL_TEXTURE_GEN_T);
+        glClientActiveTexture(GL_TEXTURE0);
+        glActiveTexture(GL_TEXTURE0);
+        lightmap_units_active = true;
+        lightmap_bound_texture = -1;
+        memset(&lightmap_bound_uv, 0, sizeof(lightmap_bound_uv));
+    }
+    if (lightmap_bound_texture != texture) {
+        GLuint obj = hyena_texture_objects[texture];
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, obj);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, obj);
+        glActiveTexture(GL_TEXTURE0);
+        lightmap_bound_texture = texture;
+    }
+    if (lightmap_bound_uv.buffer != uv->buffer ||
+        lightmap_bound_uv.data != uv->data ||
+        lightmap_bound_uv.stride != uv->stride ||
+        lightmap_bound_uv.type != uv->type) {
+        const void *ptr;
+        glClientActiveTexture(GL_TEXTURE1);
         ptr = Hyena_ArrayPointer(uv);
         glTexCoordPointer(2, Hyena_ArrayType(uv->type), uv->stride, ptr);
-        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+        glClientActiveTexture(GL_TEXTURE0);
+        lightmap_bound_uv = *uv;
     }
-    glClientActiveTexture(GL_TEXTURE0);
-    glActiveTexture(GL_TEXTURE0);
 }
 
 void
 Hyena_EndLightmapped(void)
 {
-    int unit;
-    for (unit = 1; unit <= 2; ++unit) {
-        glClientActiveTexture(GL_TEXTURE0 + unit);
-        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-        glActiveTexture(GL_TEXTURE0 + unit);
-        glDisable(GL_TEXTURE_2D);
-        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    }
+    if (!lightmap_units_active)
+        return;
+    glClientActiveTexture(GL_TEXTURE1);
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    glActiveTexture(GL_TEXTURE1);
+    glDisable(GL_TEXTURE_2D);
+    glActiveTexture(GL_TEXTURE2);
+    glDisable(GL_TEXTURE_GEN_S);
+    glDisable(GL_TEXTURE_GEN_T);
+    glDisable(GL_TEXTURE_2D);
     glClientActiveTexture(GL_TEXTURE0);
     glActiveTexture(GL_TEXTURE0);
     Hyena_GLUnbindBuffers();
+    lightmap_units_active = false;
+    lightmap_bound_texture = -1;
+    memset(&lightmap_bound_uv, 0, sizeof(lightmap_bound_uv));
 }
 
 void

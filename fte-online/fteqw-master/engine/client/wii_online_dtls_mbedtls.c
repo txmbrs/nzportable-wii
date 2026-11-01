@@ -11,6 +11,7 @@
 #include <mbedtls/platform_util.h>
 #include <mbedtls/platform.h>
 #include <time.h>
+#include "wii_dtls_queue.h"
 
 int WiiOnline_Random(void *ctx,unsigned char *out,size_t length);
 typedef struct dtls_packet_s {
@@ -32,8 +33,7 @@ typedef struct {
     unsigned trace_rx,trace_plain,trace_tx,trace_tx_errors,trace_last,trace_input_time;
     mbedtls_ms_time_t timer_start;
     uint32_t timer_intermediate,timer_final;
-    unsigned char pending[16384];
-    size_t pending_length;
+    wii_dtls_queue_t outgoing;
     qboolean established,failed,peer_matched;
 } wii_dtls_t;
 
@@ -238,21 +238,37 @@ static void *create_context(const dtlscred_t *credentials,void *cbctx,
 failed:
     dtls_result(d,result); destroy_context(d); return NULL;
 }
+static int write_queued(void *ctx,const unsigned char *data,size_t length)
+{
+    wii_dtls_t *d=ctx;
+    int result=mbedtls_ssl_write(&d->ssl,data,length);
+    if (result>0) return result;
+    return dtls_result(d,result)<0 ? -1:0;
+}
+static int flush_outgoing(wii_dtls_t *d)
+{
+    int result=Wii_DTLSQueueDrain(&d->outgoing,d,write_queued);
+    if (result<0) d->failed=true;
+    return result;
+}
 static neterr_t transmit(void *ctx,const qbyte *data,size_t length)
 {
     wii_dtls_t *d=ctx;
     int result=handshake(d);
     if (result<0) return NETERR_DISCONNECTED;
     if (!result) return NETERR_CLOGGED;
+    result=flush_outgoing(d);
+    if (result<0) return NETERR_DISCONNECTED;
     if (!length) return NETERR_SENT;
     result=mbedtls_ssl_get_max_out_record_payload(&d->ssl);
-    if (result<0 || length>(size_t)result || length>sizeof(d->pending)) return NETERR_MTU;
-    qboolean same=true;
-    if (!d->pending_length) { memcpy(d->pending,data,length); d->pending_length=length; }
-    else same=length==d->pending_length && !memcmp(d->pending,data,length);
-    result=mbedtls_ssl_write(&d->ssl,d->pending,d->pending_length);
-    if (result>0) { d->pending_length=0; return same ? NETERR_SENT:NETERR_CLOGGED; }
-    return dtls_result(d,result)<0 ? NETERR_DISCONNECTED:NETERR_CLOGGED;
+    if (result<0 || length>(size_t)result) return NETERR_MTU;
+    result=Wii_DTLSQueuePush(&d->outgoing,data,length);
+    if (result<0) return NETERR_MTU;
+    if (!result) return NETERR_CLOGGED;
+    /* SENT means the immutable datagram is now owned by the transport. Tick
+     * and receive also drain it; a blocked socket cannot discard later DATA. */
+    if (flush_outgoing(d)<0) return NETERR_DISCONNECTED;
+    return NETERR_SENT;
 }
 static neterr_t received(void *ctx,sizebuf_t *message)
 {
@@ -267,7 +283,7 @@ static neterr_t received(void *ctx,sizebuf_t *message)
     if (message->cursize>0) {
         ++d->trace_rx; d->trace_input_time=Sys_Milliseconds();
         dtls_packet_t *packet=NULL;
-        if (message->cursize<=18432 && d->packets<4)
+        if (message->cursize<=18432 && d->packets<16)
             packet=BZF_Malloc(sizeof(*packet)+message->cursize);
         if (packet) {
             packet->next=NULL; packet->length=message->cursize;
@@ -275,7 +291,7 @@ static neterr_t received(void *ctx,sizebuf_t *message)
             if (d->tail) d->tail->next=packet; else d->head=packet;
             d->tail=packet; ++d->packets;
         } else if (++d->ingress_dropped<=4) {
-            Con_Printf("NET DTLS: ingress dropped; queue %u/4, bytes %d; continuing decrypt drain\n",
+            Con_Printf("NET DTLS: ingress dropped; queue %u/16, bytes %d; continuing decrypt drain\n",
                 d->packets,message->cursize);
         }
         /* A full queue MUST still reach ssl_read below. Buffered records may
@@ -286,6 +302,7 @@ static neterr_t received(void *ctx,sizebuf_t *message)
     int result=handshake(d);
     if (result<0) return NETERR_DISCONNECTED;
     if (!result) return NETERR_CLOGGED;
+    if (flush_outgoing(d)<0) return NETERR_DISCONNECTED;
     result=mbedtls_ssl_read(&d->ssl,message->data,message->maxsize);
     if (result>0) { ++d->trace_plain; message->cursize=result; return NETERR_SENT; }
     return dtls_result(d,result)<0 ? NETERR_DISCONNECTED:NETERR_CLOGGED;
@@ -293,6 +310,7 @@ static neterr_t received(void *ctx,sizebuf_t *message)
 static neterr_t timeouts(void *ctx)
 {
     int result=handshake(ctx);
+    if (result>0 && flush_outgoing(ctx)<0) return NETERR_DISCONNECTED;
     return result<0 ? NETERR_DISCONNECTED:result ? NETERR_SENT:NETERR_CLOGGED;
 }
 static int get_certificate(void *ctx,enum certprops_e property,char *out,size_t capacity)

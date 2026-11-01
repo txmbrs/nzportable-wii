@@ -967,6 +967,11 @@ static void CL_SendConnectPacket (netadr_t *to)
 
 	{
 		int ourmtu;
+#ifdef PLATFORM_WII
+		if (to->type == NA_ICE)
+			ourmtu = 1000; /* Leaves room for SCTP and DTLS within the 1200-byte datagram. */
+		else
+#endif
 		if (to->type == NA_LOOPBACK)
 			ourmtu = MAX_UDP_PACKET;
 		else if (*net_mtu.string)
@@ -2546,7 +2551,7 @@ void CL_Disconnect (const char *reason)
 	qbyte	final[13];
 	int i;
 #ifdef PLATFORM_WII
-    qboolean wii_release_resources = cls.state >= ca_onserver && cls.state < ca_active;
+    qboolean wii_release_resources = cls.state >= ca_connected && cls.state < ca_active;
 #ifdef MENU_DAT
     wii_release_resources |= MP_WiiMenuSuspended();
 #endif
@@ -3160,7 +3165,7 @@ void CL_WiiLoadingKeepalive(void)
     static qboolean busy;
     unsigned int now;
     if (busy || !Sys_IsMainThread() || cls.demoplayback ||
-        cls.protocol != CP_QUAKEWORLD || cls.state < ca_onserver || cls.state >= ca_active)
+        cls.protocol != CP_QUAKEWORLD || cls.state < ca_connected || cls.state >= ca_active)
         return;
     now=Sys_Milliseconds();
     busy=true;
@@ -8107,6 +8112,9 @@ void Host_FinishLoading(void)
 		WII_STARTUP_TRACE("startup: renderer started; cinematic/menu");
 		CL_StartCinematicOrMenu();
 		WII_STARTUP_TRACE("startup: cinematic/menu returned");
+#ifdef PLATFORM_WII
+        {extern void WiiOnline_BeginRuntimeLog(void);WiiOnline_BeginRuntimeLog();}
+#endif
 	}
 	else	//3 flags for a renderer restart
 		Renderer_Start();

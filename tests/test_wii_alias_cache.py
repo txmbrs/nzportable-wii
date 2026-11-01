@@ -34,7 +34,9 @@ static void *Hyena_AllocateTransient(size_t n) {return malloc(n);}
 static void Hyena_MorphWeight(int i,float f) {(void)i;(void)f;}
 static void Hyena_DrawPacked(int a,int b,int c,int d,const void *e,const unsigned short *f,unsigned g)
 {(void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;assert(0);}
-static size_t Hyena_StaticVertexBudget(void) {return 0;}
+static size_t static_budget;
+static size_t Hyena_StaticVertexBudget(void) {return static_budget;}
+static void Hyena_UploadStaticWorldBuffer(hyena_buffer_t *b) {b->immutable=1;}
 static hyena_buffer_t *Hyena_CreateBuffer(int target,const void *data,size_t size) {
  hyena_buffer_t *b=calloc(1,sizeof(*b));assert(b);++live_buffers;
  b->size=size; b->owned=target==HYE_ARRAY_BUFFER;
@@ -56,7 +58,7 @@ static double Wii_PerfClock(void) {return 1;}
 static void Wii_PerfAlias(double a,double b,int hit,int vertices) {(void)a;(void)b;(void)vertices;was_hit=hit;}
 static void Hyena_DrawElements(int mode,const hyena_arrays_t *a,int count,hyena_buffer_t *indices,size_t offset) {
  (void)mode;assert(a->position.type==HYE_SHORT && a->scale==1.0f/128.0f);
- const short *pos=a->position.data;
+ const short *pos=a->position.buffer?a->position.buffer->data:a->position.data;
  const float *uv=a->uv.buffer?a->uv.buffer->data:a->uv.data;
  const unsigned short *ix=(const void*)((const byte*)indices->data+offset);
  assert(a->count==expect_count && count==3*(expect_count-2));
@@ -87,7 +89,8 @@ static void clear(void) {
  R_ClearAliasTopologyCache();assert(!live_buffers && !wii_alias_uv_bytes && !wii_alias_pose_bytes && !wii_alias_uv_objects);
  assert(!r_alias_positions && !r_alias_vertex_capacity);
 }
-int main(void) {
+int main(int argc,char **argv) {
+ static_budget=argc>1?2u*1024*1024:0;(void)argv;
  model_t models[40];entity_t entity={&models[0]};currententity=&entity;
  trivertx_t poses[8][4];uint32_t random=123;
  for(int i=0;i<8;i++)for(int j=0;j<4;j++)for(int k=0;k<3;k++){random=random*1664525u+1013904223u;poses[i][j].v[k]=random>>24;}
@@ -98,18 +101,21 @@ int main(void) {
  }
  assert(uv_attempts==1);
  run(c,poses[0],NULL,0,4);run(c,poses[0],NULL,1,4);assert(was_hit);
- int *relocated=commands(4);run(relocated,poses[1],poses[2],0.25f,4);assert(uv_attempts==2 && wii_alias_uv_objects==1);
+ int *relocated=commands(4);run(relocated,poses[1],poses[2],0.25f,4);assert(uv_attempts==2 && wii_alias_uv_objects==2);
  free(c);free(relocated);clear();
  c=commands(4);uv_fail=1;int before=uv_attempts;
  run(c,poses[0],poses[1],0.3f,4);run(c,poses[0],poses[1],0.3f,4);
  assert(uv_attempts==before+1);clear();uv_fail=0;
- for(int i=0;i<40;i++){entity.model=&models[i];run(c,poses[0],NULL,0,4);}
- assert(wii_alias_uv_objects==32 && wii_alias_uv_bytes<=WII_ALIAS_UV_BUDGET);clear();free(c);
- int n=16384;trivertx_t *large=calloc(n,sizeof(*large));int *big=commands(n);
- entity.model=&models[0];run(big,large,NULL,0,n);assert(r_alias_topologies->cached_positions);
- entity.model=&models[1];run(big,large,NULL,0,n);assert(!r_alias_topologies->cached_positions);
- run(big,large,NULL,0,n);assert(!was_hit);
- assert(wii_alias_pose_bytes<=WII_ALIAS_POSE_BUDGET);clear();free(big);free(large);
+ int *many[140];
+ for(int i=0;i<140;i++){many[i]=commands(4);entity.model=&models[i%40];run(many[i],poses[0],NULL,0,4);}
+ assert(wii_alias_uv_objects==WII_ALIAS_UV_OBJECTS && wii_alias_uv_bytes<=WII_ALIAS_UV_BUDGET);
+ clear();for(int i=0;i<140;i++)free(many[i]);free(c);
+ int n=8192;trivertx_t *large=calloc(n,sizeof(*large));int *big=commands(n),*big2=commands(n);
+ entity.model=&models[0];run(big,large,large,0.25f,n);assert(r_alias_topologies->cached_positions);
+ entity.model=&models[1];run(big2,large,large,0.25f,n);assert(!r_alias_topologies->cached_positions);
+ run(big2,large,large,0.25f,n);assert(!was_hit);
+ if(static_budget){run(big,large,NULL,0,n);run(big,large,NULL,0,n);assert(alias_pose_bytes>0 && alias_pose_bytes<=static_budget);}
+ assert(wii_alias_pose_bytes<=WII_ALIAS_POSE_BUDGET);clear();free(big);free(big2);free(large);
  printf("PASS: %d draws, exact interpolation, cache hits, UV immutability, allocation fallback, object/memory limits, relocation and teardown\n",draws);
 }
 """
@@ -119,3 +125,4 @@ with tempfile.TemporaryDirectory(prefix='nzp-alias-cache-') as tmp:
  cmd=[os.environ.get('CC','cc'),'-std=c99','-O2','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer',str(source),'-o',str(binary)]
  subprocess.run(cmd,check=True)
  subprocess.run([str(binary)],check=True)
+ subprocess.run([str(binary),"static-vbo"],check=True)

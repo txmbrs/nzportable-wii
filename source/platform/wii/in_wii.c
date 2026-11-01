@@ -6,14 +6,17 @@
 #include "../sdl/sdl_local.h"
 #include "../../menu/menu_defs.h"
 #include "sprint_wii.h"
+#include "boot_wii.h"
 void Wii_ResetControls_f(void);
 
 static in_analog_stick_t sticks[2];
 static unsigned int rumble_until;
-static qboolean gamepad_connected;
+static qboolean gamepad_connected = true;
 static unsigned int previous_keys;
+static qboolean native_button_activity;
+qboolean Wii_NativeButtonActivity(void) { return native_button_activity; }
 static wii_sprint_gesture_t sprint_gesture;
-static cvar_t wii_flick_sprint={.name="wii_flick_sprint",.string="1",.flags=CVAR_ARCHIVE};
+static cvar_t wii_flick_sprint={.name="wii_flick_sprint",.string="1",.flags=CVAR_ARCHIVE,.value=1.0f};
 static const struct {unsigned int wpad,pad;int key;} button_map[]={
     {WPAD_BUTTON_A|WPAD_CLASSIC_BUTTON_A,PAD_BUTTON_A,K_BOTTOMFACE},
     {WPAD_BUTTON_2|WPAD_CLASSIC_BUTTON_B,PAD_BUTTON_B,K_RIGHTFACE},
@@ -56,6 +59,7 @@ void Wii_PollInput(void)
         if((wp&button_map[i].wpad)||(pd&button_map[i].pad))keys|=1u<<i;
         if((keys^previous_keys)&(1u<<i))Key_Event(button_map[i].key,(keys&(1u<<i))!=0);
     }
+    native_button_activity=(keys|previous_keys)!=0;
     previous_keys=keys;
     if(wp||pd){IN_SetActiveDevice(IN_DEVICE_GAMEPAD);Menu_SetInputDevice(IN_DEVICE_GAMEPAD);}
     memset(sticks, 0, sizeof(sticks));
@@ -83,6 +87,7 @@ void Wii_PollInput(void)
         sticks[1].x = PAD_SubStickX(0) / 100.0f;
         sticks[1].y = PAD_SubStickY(0) / 100.0f;
     }
+    if(fabsf(sticks[0].x)>.3f || fabsf(sticks[0].y)>.3f){IN_SetActiveDevice(IN_DEVICE_GAMEPAD);Menu_SetInputDevice(IN_DEVICE_GAMEPAD);}
     /* Use the game's real sprint impulse; stamina and stopping remain in QC.
      * Two forward taps with neutral between; a single held push just walks. */
     if (Wii_SprintGesture(&sprint_gesture,move_source,
@@ -92,14 +97,13 @@ void Wii_PollInput(void)
         sticks[0].x,sticks[0].y,SDL_GetTicks()))
     {
         Cbuf_AddText("impulse 23\n");
-        Sys_Printf("Wii sprint: double forward tap detected; impulse 23 queued\n");
     }
     if (rumble_until && SDL_GetTicks() >= rumble_until) {
         WPAD_Rumble(0, 0); PAD_ControlMotor(0, PAD_MOTOR_STOP); rumble_until = 0;
     }
 }
 qboolean IN_PlatformHasMouse(void) { return false; }
-qboolean IN_PlatformHasGamepad(void) { return gamepad_connected; }
+qboolean IN_PlatformHasGamepad(void) { return true; }
 void IN_SetMouseToRelative(bool relative) { (void)relative; }
 void IN_PlatformClearPendingInput(void) { memset(sticks, 0, sizeof(sticks)); memset(&sprint_gesture,0,sizeof(sprint_gesture)); }
 void IN_PlatformMouseMove(usercmd_t *cmd) { (void)cmd; }
@@ -111,7 +115,7 @@ void IN_PlatformRumble(unsigned short low, unsigned short high, unsigned int dur
     WPAD_Rumble(0, on); PAD_ControlMotor(0, on ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP);
     rumble_until = on ? SDL_GetTicks() + duration : 0;
 }
-void IN_PlatformInit(void) { Cvar_SetValue("in_anub_mode", 1); Cvar_RegisterVariable(&wii_flick_sprint); Cmd_AddCommand("wii_reset_controls",Wii_ResetControls_f); }
+void IN_PlatformInit(void) { Cvar_SetValue("in_anub_mode", 1); Cvar_RegisterVariable(&wii_flick_sprint); Cmd_AddCommand("wii_reset_controls",Wii_ResetControls_f); Cmd_AddCommand("wii_dump_log",Wii_BootFlushLog); }
 void IN_PlatformShutdown(void) { WPAD_Rumble(0, 0); PAD_ControlMotor(0, PAD_MOTOR_STOP); }
 void IN_PlatformCommands(void) {}
 void IN_PlatformMove(usercmd_t *cmd) { (void)cmd; }

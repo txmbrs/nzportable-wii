@@ -881,6 +881,8 @@ int Netchan_Transmit (netchan_t *chan, int length, qbyte *data, int rate)
 	if (chan->incoming_acknowledged > chan->last_reliable_sequence
 	&& chan->incoming_reliable_acknowledged != chan->reliable_sequence)
 		send_reliable = true;	//they acked a later packet without acking the reliable...
+/* Reliable loss is inferred from peer ACK progression. A timeout alone
+ * cannot distinguish a lost request from a lost ACK; do not resend blindly. */
 
 // if the reliable transmit buffer is empty, copy the current message out
 	if (!chan->reliable_length && chan->message.cursize)

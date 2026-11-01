@@ -323,6 +323,13 @@ void Sys_SendKeyEvents(void)
 		return;
 	while (SDL_PollEvent(&event)) {
 		int key;
+#ifdef PLATFORM_WII
+        extern qboolean Wii_NativeButtonActivity(void);
+        /* Native WPAD/PAD owns controllers. Keep USB keyboard/mouse events,
+         * but do not let the same native button also bind a synthetic mouse. */
+        if (event.type>=SDL_CONTROLLERAXISMOTION && event.type<=SDL_CONTROLLERDEVICEREMAPPED) continue;
+        if ((event.type==SDL_MOUSEBUTTONDOWN || event.type==SDL_MOUSEBUTTONUP) && Wii_NativeButtonActivity()) continue;
+#endif
 		switch (event.type) {
 		case SDL_QUIT: Sys_Quit(); return;
 		case SDL_KEYDOWN: case SDL_KEYUP:
@@ -349,7 +356,9 @@ void Sys_SendKeyEvents(void)
 			} else if (key) Key_Event(key, event.type == SDL_MOUSEBUTTONDOWN);
 			break;
 		case SDL_MOUSEMOTION:
+#ifndef PLATFORM_WII
 			if (event.motion.xrel || event.motion.yrel) { IN_SetActiveDevice(IN_DEVICE_KEYBOARD_MOUSE); Menu_SetInputDevice(IN_DEVICE_KEYBOARD_MOUSE); }
+#endif
 			if (key_dest == key_menu || key_dest == key_menu_pause) {
 				int x, y;
 				SDL_MenuCoordinates(event.motion.x, event.motion.y, &x, &y);
@@ -430,8 +439,13 @@ int main(int argc, char **argv)
 	headless_test = TestHandler_ArgumentsAllowHeadless(startup.argc, startup.argv) ||
 		SDL_ArgumentsRequestHeadless(startup.argc, startup.argv);
     Sys_Printf("BOOT: SDL initialization\n");
+#ifdef PLATFORM_WII
+	if (SDL_Init(headless_test ? SDL_INIT_TIMER :
+		(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS)) != 0) {
+#else
 	if (SDL_Init(headless_test ? SDL_INIT_TIMER :
 		(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER)) != 0) {
+#endif
 		Sys_Printf("SDL_Init: %s\n", SDL_GetError());
 #ifdef PLATFORM_WII
         Wii_BootFatal(SDL_GetError());
@@ -465,6 +479,7 @@ int main(int argc, char **argv)
     Sys_Printf("BOOT: entering game frame loop\n");
 	oldtime = Sys_FloatTime();
 #ifdef PLATFORM_WII
+    Wii_BootSetRuntime(1);
     unsigned int saved_revision = cvar_archive_revision;
     unsigned int pending_revision = saved_revision;
     Uint32 config_save_deadline = 0;
@@ -495,6 +510,7 @@ int main(int argc, char **argv)
 	if (host_initialized)
 	{
 #ifdef PLATFORM_WII
+        Wii_BootSetRuntime(0);
         Sys_Printf("QUIT: disconnecting client/server\n");
         CL_Disconnect_f();
         Sys_Printf("QUIT: saving settings and shutting down subsystems\n");

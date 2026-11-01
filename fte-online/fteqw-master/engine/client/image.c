@@ -8513,9 +8513,20 @@ static void Image_ResampleTexture16Nearest (const unsigned short *in, int inwidt
 	}
 }
 
-//returns out on success. if out is null then returns a new BZ_Malloced buffer
+/* Resampling is optional: callers can retain the original image if workspace
+ * is unavailable. Never use the fatal BZ_Malloc for this recoverable path. */
+static void *Image_ResampleAlloc(int width,int height,size_t bpp)
+{
+    size_t row;
+    if (width<=0 || height<=0 || (size_t)width>(size_t)-1-3) return NULL;
+    row=((size_t)width+3)&~(size_t)3;
+    if (row>((size_t)-1)/bpp || (row*=bpp)>((size_t)-1)/(size_t)height) return NULL;
+    return BZF_Malloc(row*(size_t)height);
+}
+//returns out on success. if out is null then returns a new fallible buffer (NULL on allocation failure)
 void *Image_ResampleTexture (uploadfmt_t format, const void *in, int inwidth, int inheight, void *out,  int outwidth, int outheight)
 {
+    if (!in || inwidth<=0 || inheight<=0 || outwidth<=0 || outheight<=0) return NULL;
 	switch(format)
 	{
 	case PTI_INVALID:
@@ -8533,7 +8544,9 @@ void *Image_ResampleTexture (uploadfmt_t format, const void *in, int inwidth, in
 	case PTI_BGRA8_SRGB:
 	case PTI_BGRX8_SRGB:
 		if (!out)
-			out = BZ_Malloc(((outwidth+3)&~3)*outheight*4);
+			out = Image_ResampleAlloc(outwidth,outheight,4);
+		if (!out)
+			return NULL;
 #ifdef HAVE_CLIENT
 		if (gl_lerpimages.ival)
 #else
@@ -8547,7 +8560,9 @@ void *Image_ResampleTexture (uploadfmt_t format, const void *in, int inwidth, in
 	case PTI_A2BGR10:
 	case PTI_E5BGR9:
 		if (!out)
-			out = BZ_Malloc(((outwidth+3)&~3)*outheight*4);
+			out = Image_ResampleAlloc(outwidth,outheight,4);
+		if (!out)
+			return NULL;
 		Image_ResampleTexture32Nearest(in, inwidth, inheight, out, outwidth, outheight);
 		return out;
 	case PTI_P8:
@@ -8556,7 +8571,9 @@ void *Image_ResampleTexture (uploadfmt_t format, const void *in, int inwidth, in
 	case PTI_L8_SRGB:
 	case PTI_R8_SNORM:
 		if (!out)
-			out = BZ_Malloc((outwidth+3)*outheight);
+			out = Image_ResampleAlloc(outwidth,outheight,1);
+		if (!out)
+			return NULL;
 		Image_ResampleTexture8Nearest(in, inwidth, inheight, out, outwidth, outheight);
 		return out;
 	case PTI_RG8:
@@ -8571,7 +8588,9 @@ void *Image_ResampleTexture (uploadfmt_t format, const void *in, int inwidth, in
 	case PTI_RGBA5551:
 	case PTI_ARGB1555:
 		if (!out)
-			out = BZ_Malloc((outwidth+3)*outheight*2);
+			out = Image_ResampleAlloc(outwidth,outheight,2);
+		if (!out)
+			return NULL;
 		Image_ResampleTexture16Nearest(in, inwidth, inheight, out, outwidth, outheight);
 		return out;
 	case PTI_RGB8:

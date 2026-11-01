@@ -255,6 +255,7 @@ R_NewMap
 */
 void R_NewMap (void)
 {
+    R_InvalidateLightPointCache();
 	int		i;
 	
 	for (i=0 ; i<256 ; i++)

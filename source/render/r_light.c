@@ -24,6 +24,8 @@
 #include "../nzportable_def.h"
 
 int r_dlightframecount;
+static unsigned lightpoint_generation=1;
+void R_InvalidateLightPointCache(void) { ++lightpoint_generation; }
 
 // MARK: Dynamic Lights
 
@@ -41,6 +43,8 @@ R_AnimateLight(void)
     // light animations
     // 'm' is normal light, 'a' is no light, 'z' is double bright
     i = (int) (cl.time * 10);
+    /* Bound cache lifetime to one rendered frame, including live style edits. */
+    R_InvalidateLightPointCache();
     for (j = 0 ; j < MAX_LIGHTSTYLES ; j++) {
         if (!cl_lightstyle[j].length) {
             d_lightstylevalue[j] = 256;
@@ -249,14 +253,46 @@ loc0:
 } /* RecursiveLightPoint */
 
 vec3_t lightcolor; // LordHavoc: used by model rendering
+
+#define LIGHTPOINT_CACHE_SIZE 256
+
+typedef struct {
+    const model_t * worldmodel;
+    unsigned        generation;
+    vec3_t          pos;
+    vec3_t          color;
+    vec3_t          spot;
+    mplane_t *      plane;
+    int             result;
+} lightpoint_cache_entry_t;
+
+static lightpoint_cache_entry_t r_lightpoint_cache[LIGHTPOINT_CACHE_SIZE];
+
 int
 R_LightPoint(vec3_t p)
 {
     vec3_t end;
+    unsigned int hash;
+    lightpoint_cache_entry_t * entry;
 
     if (r_fullbright.value || !cl.worldmodel->lightdata) {
         lightcolor[0] = lightcolor[1] = lightcolor[2] = 255;
         return 255;
+    }
+
+    hash = ((unsigned int) ((unsigned int)(int)p[0] * 73856093u) ^
+            (unsigned int) ((unsigned int)(int)p[1] * 19349663u) ^
+            (unsigned int) ((unsigned int)(int)p[2] * 83492791u)) & (LIGHTPOINT_CACHE_SIZE - 1);
+    entry = &r_lightpoint_cache[hash];
+    if (entry->worldmodel == cl.worldmodel &&
+        entry->generation == lightpoint_generation &&
+        entry->pos[0] == p[0] &&
+        entry->pos[1] == p[1] &&
+        entry->pos[2] == p[2]) {
+        VectorCopy(entry->color, lightcolor);
+        VectorCopy(entry->spot, lightspot);
+        lightplane = entry->plane;
+        return entry->result;
     }
 
     end[0] = p[0];
@@ -265,7 +301,15 @@ R_LightPoint(vec3_t p)
 
     lightcolor[0] = lightcolor[1] = lightcolor[2] = 0;
     RecursiveLightPoint(lightcolor, cl.worldmodel->nodes, p, end);
-    return ((lightcolor[0] + lightcolor[1] + lightcolor[2]) * (1.0f / 3.0f));
+
+    entry->worldmodel = cl.worldmodel;
+    entry->generation = lightpoint_generation;
+    VectorCopy(p, entry->pos);
+    VectorCopy(lightcolor, entry->color);
+    VectorCopy(lightspot, entry->spot);
+    entry->plane  = lightplane;
+    entry->result = ((lightcolor[0] + lightcolor[1] + lightcolor[2]) * (1.0f / 3.0f));
+    return entry->result;
 }
 
 // LordHavoc: .lit support end

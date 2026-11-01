@@ -1170,7 +1170,7 @@ inline static void
 QMB_UpdateParticles(void)
 {
     int i, c;
-    float grav, bounce, frametime, distance[3];
+    float grav, bounce, frametime, distance[3], farclip_sq;
     vec3_t oldorg, stop, normal;
     particle_type_t * pt;
     particle_t * p, * kill;
@@ -1181,6 +1181,7 @@ QMB_UpdateParticles(void)
     particle_count = 0;
     frametime      = fabs(cl.ctime - cl.oldtime);
     grav = sv_gravity.value / 800.0f;
+    farclip_sq = r_farclip.value * r_farclip.value;
 
     for (i = 0 ; i < num_particletypes ; i++) {
         pt = &particle_types[i];
@@ -1220,7 +1221,7 @@ QMB_UpdateParticles(void)
             VectorCopy(p->org, oldorg);
             VectorSubtract(r_refdef.vieworg, oldorg, distance);
 
-            if (VectorLength(distance) >= r_farclip.value)
+            if (DotProduct(distance, distance) >= farclip_sq)
                 p->die = 0;
 
             switch (pt->id) {
@@ -1257,7 +1258,7 @@ QMB_UpdateParticles(void)
                         if ((pt->id == p_blood3) && (r_decal_blood.value) && (decals_enabled) && (particle_mode)) {
                             TraceLineN(oldorg, p->org, stop, normal);
 
-                            if ((stop != p->org) && (VectorLength(stop) != 0)) {
+                            if ((stop != p->org) && (DotProduct(stop, stop) != 0)) {
                                 vec3_t tangent;
                                 VectorCopy(stop, p->org);
                                 VectorCopy(normal, p->vel);
@@ -1292,19 +1293,20 @@ QMB_UpdateParticles(void)
                         if ((decals_enabled) && (particle_mode)) {
                             TraceLineN(oldorg, p->org, stop, normal);
 
-                            if ((stop != p->org) && (VectorLength(stop) != 0)) {
+                            if ((stop != p->org) && (DotProduct(stop, stop) != 0)) {
                                 vec3_t tangent;
 
                                 VectorCopy(stop, p->org);
                                 VectorCopy(normal, p->vel);
                                 CrossProduct(normal, p->vel, tangent);
 
-                                if ((pt->id == p_fire || pt->id == p_dpfire) && r_decal_explosions.value)
+                                if ((pt->id == p_fire || pt->id == p_dpfire) && r_decal_explosions.value) {
                                     R_SpawnDecal(p->org, normal, tangent, decal_burn, 32, 0);
-                                else if (pt->id == p_blood1 && r_decal_blood.value)
+                                } else if (pt->id == p_blood1 && r_decal_blood.value) {
                                     R_SpawnDecal(p->org, normal, tangent, decal_blood1, 12, 0);
-                                else if (pt->id == p_blood2 && r_decal_blood.value)
+                                } else if (pt->id == p_blood2 && r_decal_blood.value) {
                                     R_SpawnDecal(p->org, normal, tangent, decal_blood2, 12, 0);
+                                }
                             }
                         }
                         VectorCopy(oldorg, p->org);
@@ -1348,7 +1350,7 @@ QMB_UpdateParticles(void)
 
                     AddParticle(p_streaktrail, oldorg, 1, p->size, 0.2, p->color, p->org);
 
-                    if (!VectorLength(p->vel))
+                    if (!DotProduct(p->vel, p->vel))
                         p->die = 0;
                     break;
 
@@ -1358,7 +1360,7 @@ QMB_UpdateParticles(void)
 
                     VectorSubtract(r_refdef.vieworg, oldorg, distance);
 
-                    if (VectorLength(distance) < r_farclip.value) {
+                    if (DotProduct(distance, distance) < farclip_sq) {
                         if ((rand() % 10 + 1 > 6))
                             AddParticle(p_streaktrail, oldorg, 1, ((rand() % 1) + 0.5), 0.2, p->color, p->org);
 
@@ -1499,6 +1501,7 @@ void
 R_DrawParticles(void)
 {
     int j, i;
+    float farclip_sq;
     vec3_t up, right, billboard[4], velcoord[4], neworg;
     particle_t * p;
     particle_type_t * pt;
@@ -1510,6 +1513,7 @@ R_DrawParticles(void)
         return;
 
     particle_time = cl.time;
+    farclip_sq = r_farclip.value * r_farclip.value;
 
     if (!cl.paused)
         QMB_UpdateParticles();
@@ -1550,7 +1554,7 @@ R_DrawParticles(void)
                         continue;
 
                     VectorSubtract(r_refdef.vieworg, p->org, distance);
-                    if (VectorLength(distance) > r_farclip.value)
+                    if (DotProduct(distance, distance) > farclip_sq)
                         continue;
 
                     hyena_colored_vertex_t * vertices = R_ReserveParticleFan(4, p->color);
@@ -1576,7 +1580,7 @@ R_DrawParticles(void)
                         continue;
 
                     VectorSubtract(r_refdef.vieworg, p->org, distance);
-                    if (VectorLength(distance) > r_farclip.value)
+                    if (DotProduct(distance, distance) > farclip_sq)
                         continue;
 
                     for (j = 0; j < 4; ++j)
@@ -1611,7 +1615,7 @@ R_DrawParticles(void)
                         continue;
 
                     VectorSubtract(r_refdef.vieworg, p->org, distance);
-                    if (VectorLength(distance) > r_farclip.value)
+                    if (DotProduct(distance, distance) > farclip_sq)
                         continue;
 
                     if (!TraceLineN(p->endorg, p->org, neworg, NULLVEC))

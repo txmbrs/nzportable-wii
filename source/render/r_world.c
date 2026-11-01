@@ -141,13 +141,11 @@ R_DrawWorldCachePage(int page, int first_index, int count, qboolean lightmap, qb
         hyena_array_t uv = arrays.uv;
         uv.data = (const void *)(2 * sizeof(float));
         Hyena_BeginLightmapped(combined_texture, &uv);
+    } else {
+        Hyena_EndLightmapped();
     }
 #endif
     Hyena_DrawElements(HYE_TRIANGLES, &arrays, count, world_indices, first_index * sizeof(unsigned short));
-#ifdef PLATFORM_WII
-    if (combined_texture >= 0)
-        Hyena_EndLightmapped();
-#endif
     if (alpha_test && !world_layout.alpha_test_all)
         Hyena_DisableCapability(HYE_ALPHA_TEST);
 }
@@ -221,6 +219,9 @@ R_BeginWorldSurfaces(void)
 static void
 R_EndWorldSurfaces(void)
 {
+#ifdef PLATFORM_WII
+    Hyena_EndLightmapped();
+#endif
     if (world_layout.alpha_test_all) {
         Hyena_AlphaFunction(HYE_GREATER, 0);
         Hyena_DisableCapability(HYE_ALPHA_TEST);
@@ -951,12 +952,14 @@ R_DrawWorld(void)
     R_ClearLightmapChains();
     R_ClearWorldBatches();
     R_DrawSkyBox();
-    Fog_SetupFrame(true);
 #ifdef PLATFORM_WII
     world_singlepass = R_UseCombinedLightmaps() &&
         world_separate_arrays && world_layout.lightmap_offset >= 0 &&
         !(world_layout.lightmap_debug && world_layout.lightmap_debug->value) &&
         !(world_layout.wireframe && world_layout.wireframe->value);
+    Fog_SetupFrame(!world_singlepass);
+#else
+    Fog_SetupFrame(true);
 #endif
     R_RecursiveWorldNode(cl.worldmodel->nodes, planes);
     R_AddStaticBrushModelsToChains(planes);

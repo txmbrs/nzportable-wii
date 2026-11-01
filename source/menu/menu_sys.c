@@ -459,11 +459,9 @@ void Menu_FindKeysForCommand (char *command, int *twokeys)
 {
 	int		count;
 	int		j;
-	int		l;
 	char	*b;
 
 	twokeys[0] = twokeys[1] = -1;
-	l = strlen(command);
 	count = 0;
 
 	for (j=0 ; j<MAX_KEYS ; j++)
@@ -473,7 +471,7 @@ void Menu_FindKeysForCommand (char *command, int *twokeys)
 		b = keybindings[j];
 		if (!b)
 			continue;
-		if (!strncmp (b, command, l) )
+		if (!strcmp (b, command) )
 		{
 			twokeys[count] = j;
 			count++;
@@ -486,10 +484,7 @@ void Menu_FindKeysForCommand (char *command, int *twokeys)
 void Menu_UnbindCommand (char *command)
 {
 	int		j;
-	int		l;
 	char	*b;
-
-	l = strlen(command);
 
 	for (j=0 ; j<MAX_KEYS ; j++)
 	{
@@ -498,7 +493,7 @@ void Menu_UnbindCommand (char *command)
 		b = keybindings[j];
 		if (!b)
 			continue;
-		if (!strncmp (b, command, l) )
+		if (!strcmp (b, command) )
 			Key_SetBinding (j, "");
 	}
 }

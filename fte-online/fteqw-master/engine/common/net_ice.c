@@ -3437,6 +3437,10 @@ static void SCTP_RequestAck(sctp_t *sctp,qboolean immediate)
 neterr_t SCTP_Transmit(sctp_t *sctp, const void *data, size_t length)
 {
 	qbyte pkt[65536];
+#ifdef PLATFORM_WII
+    int saved_ackneeded=sctp->i.ackneeded;
+    unsigned saved_ackdeadline=sctp->i.ackdeadline;
+#endif
 	size_t pktlen = 0;
 	struct sctp_header_s *h = (void*)pkt;
 	struct sctp_chunk_data_s *d;
@@ -3625,7 +3629,21 @@ neterr_t SCTP_Transmit(sctp_t *sctp, const void *data, size_t length)
 		return NETERR_SENT; //nothing to send...
 
 	h->crc = SCTP_Checksum(h, pktlen);
-	return SCTP_PeerSendPacket(sctp, pktlen, h);
+    {
+        neterr_t result=SCTP_PeerSendPacket(sctp,pktlen,h);
+        /* A rejected DATA was never accepted into the DTLS queue. Reuse its
+         * TSN rather than creating a false gap at the peer on backpressure. */
+#ifdef PLATFORM_WII
+        if (result!=NETERR_SENT) {
+            if (length) --sctp->o.tsn;
+            if (!sctp->i.ackneeded && saved_ackneeded) {
+                sctp->i.ackneeded=saved_ackneeded;
+                sctp->i.ackdeadline=saved_ackdeadline;
+            }
+        }
+#endif
+        return result;
+    }
 }
 
 static void SCTP_DecodeDCEP(sctp_t *sctp, qbyte *resp)
@@ -3673,7 +3691,11 @@ static void SCTP_DecodeDCEP(sctp_t *sctp, qbyte *resp)
 		pktlen += sizeof(*d) + length;
 
 		h->crc = SCTP_Checksum(h, pktlen);
-		SCTP_PeerSendPacket(sctp, pktlen, h);
+#ifdef PLATFORM_WII
+        if (SCTP_PeerSendPacket(sctp,pktlen,h)!=NETERR_SENT) --sctp->o.tsn;
+#else
+        SCTP_PeerSendPacket(sctp,pktlen,h);
+#endif
 	}
 }
 
@@ -3840,11 +3862,7 @@ void SCTP_Decode(sctp_t *sctp, ftenet_connections_t *col)
 								memmove(net_message.data, sctp->i.r.buf, sctp->i.r.size);
 								net_message.cursize = sctp->i.r.size;
 								col->ReadGamePacket();
-								if (net_message.cursize != sctp->i.r.size)
-								{
-									net_message.cursize = 0;
-									return;	//something weird happened...
-								}
+								net_message.cursize = 0;
 							}
 							else if (sctp->i.r.ppid == BigLong(SCTP_PPID_DCEP))
 								SCTP_DecodeDCEP(sctp, resp);

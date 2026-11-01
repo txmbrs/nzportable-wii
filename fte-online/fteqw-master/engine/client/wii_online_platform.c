@@ -19,12 +19,17 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include "wii_online_nettrace.h"
+#include "../../../../platform/wii/buffered_log.h"
 
 static heap_cntrl online_heap;
 static uintptr_t heap_low, heap_high;
 static int heap_ready;
 int WiiOnline_InitRandom(void);
 static char online_log_path[1200];
+static FILE *online_log_file;
+static wii_log_buffer_t runtime_log;
+static int log_runtime;
+static void flush_online_log(void);
 static int log_warning;
 static GXRModeObj *boot_mode;
 static void *boot_xfb;
@@ -37,6 +42,8 @@ int Wii_ChainloadDOL(const char *,char *,unsigned int);
 void WiiOnline_Return(void)
 {
     char path[1200],error[256];
+    flush_online_log();
+    if(online_log_file) { fflush(online_log_file); fclose(online_log_file); online_log_file=NULL; }
     if(home_exit) return;
     snprintf(path,sizeof(path),"%sboot.dol",shared_base);
     if(!Wii_ChainloadDOL(path,error,sizeof(error))) WiiOnline_Fatal(error);
@@ -180,26 +187,37 @@ void *__wrap_realloc(void *ptr, size_t bytes)
     return next;
 }
 
+static int open_online_log(void)
+{
+    if(!online_log_file && online_log_path[0])online_log_file=fopen(online_log_path,"ab");
+    if(!online_log_file && !log_warning++)printf("WARNING: cannot open online startup log.\n");
+    return online_log_file!=NULL;
+}
+static void flush_online_log(void)
+{
+    char chunk[1024];size_t n;unsigned level;
+    if(!open_online_log())return;
+    if(runtime_log.dropped){fprintf(online_log_file,"\n[log buffer dropped %lu oldest bytes]\n",runtime_log.dropped);runtime_log.dropped=0;}
+    do {
+        _CPU_ISR_Disable(level);n=Wii_LogTake(&runtime_log,chunk,sizeof(chunk));_CPU_ISR_Restore(level);
+        if(n && fwrite(chunk,1,n,online_log_file)!=n){if(!log_warning++)printf("WARNING: online log write failed.\n");break;}
+    }while(n);
+    if(fflush(online_log_file) && !log_warning++)printf("WARNING: online log flush failed.\n");
+}
+void WiiOnline_BeginRuntimeLog(void);
+void WiiOnline_BeginRuntimeLog(void)
+{
+    flush_online_log();log_runtime=1;
+}
 void WiiOnline_Log(const char *text)
 {
-    FILE *file;
-    int written,closed;
-    size_t length;
-    if(!online_log_path[0]) return;
-    file=fopen(online_log_path,"ab");
-    if(!file) {
-        if(!log_warning++) printf("WARNING: cannot open online startup log.\n");
-        return;
-    }
-    length=strlen(text);
-    written=fwrite(text,1,length,file)==length;
-    /* Closing commits FAT file length as well as buffered contents. An open
-     * stdio stream with fflush alone could still appear empty after a reset. */
-    closed=!fclose(file);
-    if((!written || !closed) && !log_warning++) printf("WARNING: online startup log write/close failed.\n");
+    unsigned level;
+    if(log_runtime){_CPU_ISR_Disable(level);Wii_LogAppend(&runtime_log,text,strlen(text));_CPU_ISR_Restore(level);return;}
+    if(open_online_log()){fputs(text,online_log_file);fflush(online_log_file);}
 }
 void WiiOnline_Fatal(const char *text)
 {
+    log_runtime=0;flush_online_log();
     if (boot_xfb) {
         VIDEO_Configure(boot_mode);
         VIDEO_SetNextFramebuffer(boot_xfb);
@@ -209,6 +227,8 @@ void WiiOnline_Fatal(const char *text)
         VIDEO_WaitVSync();
     }
     WiiOnline_Log(text);
+    flush_online_log();
+    if(online_log_file) { fflush(online_log_file); fclose(online_log_file); online_log_file=NULL; }
     printf("\nNZPortable Wii Online (development)\n%s\nHOME / START: exit\n", text);
     for (;;) {
         WPAD_ScanPads(); PAD_ScanPads();
@@ -286,42 +306,68 @@ static unsigned int elapsed_ms(u64 start)
 { return (unsigned int)ticks_to_millisecs(gettime()-start); }
 static void init_network(void)
 {
-    char status[160];
-    int result,last_status=0;
-    unsigned int next_message=0;
+    char status[512];
+    int result = -1;
+    unsigned int next_message = 0;
     u64 start;
     lwp_t thread;
+    int attempt = 0;
+
     startup_step("NET: starting IOS network asynchronously (45-second limit)");
-    WiiNetTrace_Reset();
-    result=net_init_async(NULL,NULL);
-    snprintf(status,sizeof(status),"NET: net_init_async returned %d",result);
-    startup_step(status);
-    if(result<0 && result!=-EBUSY) {
-        snprintf(status,sizeof(status),"Network start failed: IOS code %d.",result);
-        WiiOnline_Fatal(status);
-    }
-    start=gettime();
-    while((result=net_get_status())==-EBUSY) {
+    start = gettime();
+
+    while (elapsed_ms(start) < 45000) {
+        attempt++;
+        WiiNetTrace_Reset();
+        result = net_init_async(NULL, NULL);
+        snprintf(status, sizeof(status), "NET: net_init_async (attempt %d) returned %d", attempt, result);
+        startup_step(status);
+
+        if (result == 0 || result == -EBUSY) {
+            while ((result = net_get_status()) == -EBUSY) {
+                WiiNetTrace_Drain();
+                unsigned int ms = elapsed_ms(start);
+                if (ms >= 45000) break;
+                if (ms >= next_message) {
+                    snprintf(status, sizeof(status), "NET: waiting for IOS/DHCP (%u / 45s), status %d", ms / 1000, result);
+                    startup_step(status);
+                    WiiNetTrace_Status();
+                    next_message = ms + 5000;
+                }
+                usleep(100000);
+            }
+        }
+
         WiiNetTrace_Drain();
-        unsigned int ms=elapsed_ms(start);
-        if(ms>=45000) {
-            WiiNetTrace_Drain(); WiiNetTrace_Status();
-            WiiOnline_Fatal("IOS network startup timed out after 45 seconds. See NET IOS stage and callback result in the startup log.");
-        }
-        if(ms>=next_message) {
-            snprintf(status,sizeof(status),"NET: waiting for IOS/DHCP (%u / 45 seconds), status %d",ms/1000,result);
+        WiiNetTrace_Status();
+
+        if (result >= 0) {
+            snprintf(status, sizeof(status), "NET: IOS initialization succeeded on attempt %d, status %d", attempt, result);
             startup_step(status);
-            WiiNetTrace_Status();
-            next_message=ms+5000;
+            break;
         }
-        usleep(100000);
+
+        if (elapsed_ms(start) >= 45000) break;
+
+        snprintf(status, sizeof(status), "NET: attempt %d failed (code %d), retrying link in 2s...", attempt, result);
+        startup_step(status);
+
+        /* Only tear down a completed failure. net_deinit waits without its
+         * own timeout if an async init is still in progress. */
+        if (net_get_status()==-EBUSY) break;
+        net_deinit();
+        unsigned spent=elapsed_ms(start);
+        if (spent>=43000) break;
+        usleep(2000000);
     }
-    last_status=result;
-    WiiNetTrace_Drain(); WiiNetTrace_Status();
-    snprintf(status,sizeof(status),"NET: IOS initialization completed, status %d",last_status);
-    startup_step(status);
-    if(result<0) {
-        snprintf(status,sizeof(status),"IOS/DHCP initialization failed: code %d. Saved Wii network settings were not changed.",result);
+
+    if (result < 0) {
+        snprintf(status, sizeof(status),
+            "IOS/DHCP initialization failed: code %d (after %d attempts).\n"
+            "Network initialization did not complete.\n"
+            "Check Internet -> Connection Test in Wii System Settings.\n"
+            "Saved Wii network settings were not changed.",
+            result, attempt);
         WiiOnline_Fatal(status);
     }
     startup_step("NET: reading local IPv4 address and preparing socket API (15-second limit)");
@@ -358,7 +404,7 @@ static void init_platform(int argc, char **argv)
     VIDEO_Configure(boot_mode); VIDEO_SetNextFramebuffer(boot_xfb);
     console_init(boot_xfb,20,20,boot_mode->fbWidth-40,boot_mode->xfbHeight-40,boot_mode->fbWidth*2);
     VIDEO_SetBlack(FALSE); VIDEO_Flush(); VIDEO_WaitVSync();
-    printf("NZPortable Wii Online - startup r18aw\nVIDEO ready.\n");
+    printf("NZPortable Wii Online - startup r18ba\nVIDEO ready.\n");
     fflush(stdout);
     /* The old PPC image is gone, but its IOS USB/Bluetooth device state need
      * not be. Reload the currently running installed IOS before opening FAT or
@@ -391,7 +437,7 @@ static void init_platform(int argc, char **argv)
     FILE *log=fopen(online_log_path,"wb");
     if(log) fclose(log);
     else { printf("WARNING: cannot create online startup log.\n"); log_warning=1; }
-    startup_step("BOOT: FTE r18ax; storage ready; initializing MEM2 before controllers");
+    startup_step("BOOT: FTE r18ba; storage ready; initializing MEM2 before controllers");
     low = ((uintptr_t)SYS_GetArena2Lo()+31)&~(uintptr_t)31;
     high = (uintptr_t)SYS_GetArena2Hi()&~(uintptr_t)31;
     if (high <= low+1024*1024) WiiOnline_Fatal("MEM2 unavailable.");
@@ -469,5 +515,7 @@ int main(int argc, char **argv)
     WiiOnline_MemoryReport("before FTE engine startup");
     startup_step("BOOT: synchronous resource loading (-noworkers)");
     startup_step("BOOT: entering FTE SDL_main / Host_Init");
-    return __real_SDL_main(15, online_args);
+    int result=__real_SDL_main(15, online_args);
+    log_runtime=0;flush_online_log();
+    return result;
 }

@@ -1,0 +1,46 @@
+{
+  "rtc-client": {
+    "log": "C:\\Users\\HARDPC\\Desktop\\googlecloud\\nzportable-wii\\build\\reference\\repair-r18ba\\rtc-client\\nzp\\reference-rtc-client.log",
+    "sha256": "08e7b1a9a485de9d241e54b2748bfa46175a027b38333356565f6dda56433d53",
+    "joined": true,
+    "stages": [
+      "2026-11-01 15:00:48 Sending stringcmd prespawn 1 0 -990240093",
+      "2026-11-01 15:00:50 Sending stringcmd spawn 1",
+      "2026-11-01 15:00:51 Sending stringcmd begin 1",
+      "2026-11-01 15:02:41 Sending stringcmd prespawn 2 0 -990240093",
+      "2026-11-01 15:02:43 Sending stringcmd spawn 2",
+      "2026-11-01 15:02:43 Sending stringcmd begin 2"
+    ],
+    "join_evidence": [
+      "2026-11-01 15:00:51 RepairReferenceRTC has joined the game.",
+      "2026-11-01 15:02:43 RepairReferenceRTC has joined the game."
+    ],
+    "assets": {
+      "game.pk3": "847a6fb7c95b26eab0fdbfa31223a225608a5f9f7af4f88af1e04a1c0a14637d",
+      "progs.pk3": "47bc82fa1335f5748ac08372c2daf24c57f29e56f046ad0fa125eec90c9bf832"
+    }
+  },
+  "rtc-server": {
+    "log": "C:\\Users\\HARDPC\\Desktop\\googlecloud\\nzportable-wii\\build\\reference\\repair-r18ba\\rtc-server\\nzp\\reference-rtc-server.log",
+    "sha256": "263abde3f935295929b15da90670faeca07e4d14acb0c3abd6b0687324f63ae4",
+    "joined": true,
+    "stages": [
+      "2026-11-01 15:00:48 Client command: prespawn 1 0 -990240093",
+      "2026-11-01 15:00:50 Client command: spawn 1",
+      "2026-11-01 15:00:51 Client command: begin 1",
+      "2026-11-01 15:02:41 Client command: prespawn 2 0 -990240093",
+      "2026-11-01 15:02:43 Client command: spawn 2",
+      "2026-11-01 15:02:43 Client command: begin 2"
+    ],
+    "join_evidence": [
+      "2026-11-01 15:00:51 RepairReferenceRTC has joined the game.",
+      "2026-11-01 15:02:43 RepairReferenceRTC has joined the game."
+    ],
+    "assets": {
+      "game.pk3": "847a6fb7c95b26eab0fdbfa31223a225608a5f9f7af4f88af1e04a1c0a14637d",
+      "progs.pk3": "47bc82fa1335f5748ac08372c2daf24c57f29e56f046ad0fa125eec90c9bf832"
+    }
+  },
+  "scope": "Official legacy PC binaries over local ICE/DTLS/SCTP. Not the Wii candidate; not proof of Wii compatibility or frame performance.",
+  "initial_attempt": "Fresh identity failed in Windows SChannel; repeated using the existing identities from the previously working local reference, without weakening verification."
+}

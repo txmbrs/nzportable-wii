@@ -3139,6 +3139,9 @@ static void Get_Next_Waypoint_Internal(qboolean first_point)
 	if (!path || path->pathlist_length < 1)
 		return;
 
+	PathfindPrepareGeometry(ent);
+	waypoint_origin_actor = ent;
+
 	vec3_t approach;
 	qboolean direct_allowed = PathfindDirectAllowed(ent);
 	qboolean at_start = false;
@@ -3147,6 +3150,7 @@ static void Get_Next_Waypoint_Internal(qboolean first_point)
 		VectorCopy(approach, G_VECTOR(OFS_RETURN));
 		path->pathlist_length = 0;
 		PathSetSegment(path, G_VECTOR(OFS_RETURN), first_point);
+		waypoint_origin_actor = NULL;
 		return;
 	}
 
@@ -3176,6 +3180,7 @@ static void Get_Next_Waypoint_Internal(qboolean first_point)
 		if (VectorDistanceSquared(start, path->entry_point) >= 64) {
 			VectorCopy(path->entry_point, G_VECTOR(OFS_RETURN));
 			PathSetSegment(path, G_VECTOR(OFS_RETURN), true);
+			waypoint_origin_actor = NULL;
 			return;
 		}
 	}
@@ -3206,6 +3211,7 @@ static void Get_Next_Waypoint_Internal(qboolean first_point)
 			VectorCopy(origin, G_VECTOR(OFS_RETURN));
 			path->pathlist_length = i;
 			PathSetSegment(path, G_VECTOR(OFS_RETURN), first_point);
+			waypoint_origin_actor = NULL;
 			return;
 		}
 	}
@@ -3216,6 +3222,7 @@ static void Get_Next_Waypoint_Internal(qboolean first_point)
 
 	path->pathlist_length--;
 	PathSetSegment(path, G_VECTOR(OFS_RETURN), first_point);
+	waypoint_origin_actor = NULL;
 }
 
 
@@ -3298,6 +3305,11 @@ void PF_pathfind_follow(void)
 
 	int count = 2;
 
+	if (!pathfind_geometry_valid || path->geometry_revision != pathfind_geometry_revision)
+		PathfindPrepareGeometry(ent);
+	if (pathfind_geometry_valid)
+		waypoint_origin_actor = ent;
+
 	for (int i = path->pathlist_length - 1; i >= 0 && count < 6; i--) {
 		int waypoint = path->pathlist[i];
 
@@ -3307,6 +3319,7 @@ void PF_pathfind_follow(void)
 		VectorCopy(candidate, points[count]);
 		count++;
 	}
+	waypoint_origin_actor = NULL;
 
 	if (count == 2) {
 		float remaining = VecLength2(ent->v.origin, anchor);

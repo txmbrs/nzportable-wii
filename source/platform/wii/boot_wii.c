@@ -7,11 +7,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "boot_wii.h"
+#include "../../../platform/wii/buffered_log.h"
+#include <ogc/machine/processor.h>
+static wii_log_buffer_t runtime_log;
 
 static GXRModeObj *boot_mode;
 static void *boot_framebuffer;
 static FILE *boot_log;
 static int console_active;
+static int boot_runtime;
 static void show_console(void){
     VIDEO_Configure(boot_mode);
     VIDEO_SetNextFramebuffer(boot_framebuffer);
@@ -20,12 +24,28 @@ static void show_console(void){
     if(boot_mode->viTVMode&VI_NON_INTERLACE)VIDEO_WaitVSync();
     console_active=1;
 }
+void Wii_BootFlushLog(void){
+    char chunk[1024];size_t n;unsigned level;
+    if(!boot_log)return;
+    if(runtime_log.dropped) {fprintf(boot_log,"\n[log buffer dropped %lu oldest bytes]\n",runtime_log.dropped);runtime_log.dropped=0;}
+    do {
+        _CPU_ISR_Disable(level);n=Wii_LogTake(&runtime_log,chunk,sizeof(chunk));_CPU_ISR_Restore(level);
+        if(n && fwrite(chunk,1,n,boot_log)!=n)break;
+    } while(n);
+    fflush(boot_log);
+}
+void Wii_BootSetRuntime(int runtime){
+    boot_runtime=runtime;
+    if(!runtime)Wii_BootFlushLog();
+}
 void Wii_BootMessage(const char *message){
-    if(boot_log){fputs(message,boot_log);fflush(boot_log);}
+    if(boot_runtime){unsigned level;_CPU_ISR_Disable(level);Wii_LogAppend(&runtime_log,message,strlen(message));_CPU_ISR_Restore(level);}
+    else if(boot_log){fputs(message,boot_log);fflush(boot_log);}
     if(console_active){fputs(message,stdout);fflush(stdout);}
 }
 void Wii_BootGraphicsReady(void){Wii_BootMessage("BOOT: graphics context ready\n");console_active=0;}
 void Wii_BootFatal(const char *message){
+    Wii_BootSetRuntime(0);
     if(boot_framebuffer)show_console();
     Wii_BootMessage("\nNZPortable startup error:\n");Wii_BootMessage(message);
     Wii_BootMessage("\nBuild: " NZP_WII_REVISION "\n");

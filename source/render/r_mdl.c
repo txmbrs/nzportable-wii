@@ -17,9 +17,10 @@
 #include "../nzportable_def.h"
 #ifdef PLATFORM_WII
 #include "../platform/wii/perf_wii.h"
-#define WII_ALIAS_UV_BUDGET (128u * 1024)
-#define WII_ALIAS_POSE_BUDGET (128u * 1024)
-#define WII_ALIAS_UV_OBJECTS 32
+#define WII_ALIAS_UV_BUDGET (512u * 1024)
+#define WII_ALIAS_POSE_BUDGET (512u * 1024)
+#define WII_ALIAS_POSE_SLOTS 8
+#define WII_ALIAS_UV_OBJECTS 128
 static size_t wii_alias_uv_bytes, wii_alias_pose_bytes;
 static unsigned wii_alias_uv_objects;
 #endif
@@ -39,8 +40,10 @@ typedef struct alias_topology_s {
 #ifdef PLATFORM_WII
     hyena_buffer_t *          uv_buffer;
     short *                   cached_positions;
-    const trivertx_t *        last_pose1, *last_pose2;
-    float                     last_blend;
+    const trivertx_t *        slot_pose1[WII_ALIAS_POSE_SLOTS];
+    const trivertx_t *        slot_pose2[WII_ALIAS_POSE_SLOTS];
+    float                     slot_blend[WII_ALIAS_POSE_SLOTS];
+    unsigned                  next_slot;
     qboolean                  uv_tried, pose_tried;
 #endif
     struct alias_topology_s * next;
@@ -151,7 +154,14 @@ R_DrawAliasBatch(const alias_batch_t * batch)
             if (!cache)
                 Sys_Error("R_DrawAliasBatch: out of memory");
             cache->commands = batch->commands;
+#ifdef PLATFORM_WII
+            if (!batch->uv_buffer) {
+                cache->uvs = Hyena_CreateBuffer(HYE_ARRAY_BUFFER, batch->uvs, batch->num_vertices * 2 * sizeof(float));
+                Hyena_UploadStaticWorldBuffer(cache->uvs);
+            }
+#else
             cache->uvs      = Hyena_CreateBuffer(HYE_ARRAY_BUFFER, batch->uvs, batch->num_vertices * 2 * sizeof(float));
+#endif
             cache->indices  = Hyena_CreateBuffer(HYE_ARRAY_BUFFER, batch->indices,
                 batch->num_indices * sizeof(unsigned short));
             cache->next  = alias_arrays;
@@ -203,6 +213,9 @@ R_DrawAliasBatch(const alias_batch_t * batch)
                     Sys_Error("R_DrawAliasBatch: out of pose memory");
                 pose->source      = batch->pose1;
                 pose->vertices    = Hyena_CreateBuffer(HYE_ARRAY_BUFFER, positions, size);
+#ifdef PLATFORM_WII
+                Hyena_UploadStaticWorldBuffer(pose->vertices);
+#endif
                 pose->next        = cache->poses;
                 cache->poses      = pose;
                 alias_pose_bytes += size;
@@ -229,9 +242,12 @@ static void R_WiiReleaseAliasTopology(alias_topology_t *topology)
     if (topology->cached_positions) {
         free(topology->cached_positions);
         topology->cached_positions = NULL;
-        wii_alias_pose_bytes -= (size_t)topology->num_vertices * 3 * sizeof(short);
+        wii_alias_pose_bytes -= (size_t)topology->num_vertices * 3 * sizeof(short) * WII_ALIAS_POSE_SLOTS;
     }
-    topology->last_pose1 = topology->last_pose2 = NULL;
+    memset(topology->slot_pose1, 0, sizeof(topology->slot_pose1));
+    memset(topology->slot_pose2, 0, sizeof(topology->slot_pose2));
+    memset(topology->slot_blend, 0, sizeof(topology->slot_blend));
+    topology->next_slot = 0;
     topology->uv_tried = topology->pose_tried = false;
 }
 #endif
@@ -263,17 +279,20 @@ static alias_topology_t *
 R_AliasTopology(const int * commands)
 {
     alias_topology_t * topology;
-    const void * key = currententity && currententity->model ?
-      (const void *) currententity->model : (const void *) commands;
+    const void * key = (const void *) commands;
     const int * scan;
     int count, vertex_base = 0, index = 0;
 
     for (topology = r_alias_topologies; topology; topology = topology->next) {
-        if (topology->key != key)
-            continue;
         if (topology->commands == commands)
             return topology;
+    }
 
+    for (topology = r_alias_topologies; topology; topology = topology->next) {
+        if (topology->key != key)
+            continue;
+
+        R_ClearAliasArrays();
 #ifdef PLATFORM_WII
         R_WiiReleaseAliasTopology(topology);
 #endif
@@ -347,7 +366,9 @@ R_BuildAliasBatch(
     batch->num_indices  = topology->num_indices;
 #ifdef PLATFORM_WII
     size_t uv_bytes = (size_t)topology->num_vertices * 2 * sizeof(float);
-    size_t pose_bytes = (size_t)topology->num_vertices * 3 * sizeof(short);
+    size_t slot_elems = (size_t)topology->num_vertices * 3;
+    size_t pose_bytes = slot_elems * sizeof(short) * WII_ALIAS_POSE_SLOTS;
+    unsigned slot = 0;
     if (!topology->uv_tried && wii_alias_uv_objects < WII_ALIAS_UV_OBJECTS &&
         uv_bytes <= WII_ALIAS_UV_BUDGET - wii_alias_uv_bytes) {
         topology->uv_tried = true;
@@ -358,24 +379,38 @@ R_BuildAliasBatch(
         }
     }
     batch->uv_buffer = topology->uv_buffer;
+#endif
+    if (!pose2 && (Hyena_StaticVertexBudget() != 0)) {
+#ifdef PLATFORM_WII
+        batch->pose_cache_hit = true;
+#endif
+        return;
+    }
+#ifdef PLATFORM_WII
     if (!topology->pose_tried && pose_bytes <= WII_ALIAS_POSE_BUDGET - wii_alias_pose_bytes) {
         topology->pose_tried = true;
         topology->cached_positions = malloc(pose_bytes);
         if (topology->cached_positions) wii_alias_pose_bytes += pose_bytes;
     }
-    if (topology->cached_positions && topology->last_pose1 == pose1 &&
-        topology->last_pose2 == pose2 && (!pose2 || topology->last_blend == blend)) {
-        batch->positions = topology->cached_positions;
-        batch->pose_cache_hit = true;
-        return;
+    if (topology->cached_positions) {
+        unsigned s;
+        for (s = 0; s < WII_ALIAS_POSE_SLOTS; ++s) {
+            if (topology->slot_pose1[s] == pose1 &&
+                topology->slot_pose2[s] == pose2 &&
+                (!pose2 || topology->slot_blend[s] == blend)) {
+                batch->positions = topology->cached_positions + (size_t)s * slot_elems;
+                batch->pose_cache_hit = true;
+                return;
+            }
+        }
+        slot = topology->next_slot;
+        topology->next_slot = (slot + 1) % WII_ALIAS_POSE_SLOTS;
     }
 #endif
-    if (!pose2 && (Hyena_StaticVertexBudget() != 0))
-        return;
 
 #ifdef PLATFORM_WII
     if (topology->cached_positions) {
-        batch->positions = topology->cached_positions;
+        batch->positions = topology->cached_positions + (size_t)slot * slot_elems;
     } else
 #endif
     {
@@ -402,9 +437,11 @@ R_BuildAliasBatch(
         }
     }
 #ifdef PLATFORM_WII
-    topology->last_pose1 = pose1;
-    topology->last_pose2 = pose2;
-    topology->last_blend = blend;
+    if (topology->cached_positions) {
+        topology->slot_pose1[slot] = pose1;
+        topology->slot_pose2[slot] = pose2;
+        topology->slot_blend[slot] = blend;
+    }
 #endif
 } /* R_BuildAliasBatch */
 

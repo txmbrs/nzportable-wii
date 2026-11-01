@@ -561,7 +561,18 @@ R_DrawDecals(void)
     Hyena_DepthMask(HYE_FALSE);
     Hyena_SetDepthOffset(-1.0f);
 
+    float max_dist = r_decal_viewdistance.value;
+    float max_dist_sq = max_dist * max_dist;
+#ifdef PLATFORM_WII
+    static hyena_colored_vertex_t decal_vertices[1024];
+    static unsigned short decal_indices[3072];
+    int batch_vertex_count = 0;
+    int batch_index_count = 0;
+    int batch_texture = -1;
+#endif
+
     for (p = active_decals; p; p = p->next) {
+        float dist_sq;
         while ((kill = p->next) != NULL && kill->die < (float) cl.time && !kill->bspdecal) {
             p->next     = kill->next;
             kill->next  = free_decals;
@@ -569,46 +580,63 @@ R_DrawDecals(void)
         }
 
         VectorSubtract(r_refdef.vieworg, p->origin, decaldist);
-        if (VectorLength(decaldist) > r_decal_viewdistance.value)
+        dist_sq = DotProduct(decaldist, decaldist);
+        if (dist_sq > max_dist_sq)
             continue;
 
         if (!p->bspdecal && p->die - (float) cl.time < 0.5f) {
             dcolor = 1.0f;
             alpha  = bound(0.0f, 2.0f * (p->die - (float) cl.time), 1.0f);
         } else {
-            dcolor = bound(0.0f, 1.0f - VectorLength(decaldist) / r_decal_viewdistance.value, 1.0f);
+            dcolor = bound(0.0f, 1.0f - sqrtf(dist_sq) / max_dist, 1.0f);
             alpha  = dcolor;
         }
 
+#ifdef PLATFORM_WII
+        if (p->triangleCount > 0 && p->vertexCount > 0) {
+            int needed_verts = p->vertexCount;
+            int needed_indices = p->triangleCount * 3;
+            byte cb = (byte) (dcolor * 255.0f);
+            byte ab = (byte) (alpha * 255.0f);
+            unsigned short base_vertex;
+
+            if (batch_texture != p->texture ||
+                batch_vertex_count + needed_verts > 1024 ||
+                batch_index_count + needed_indices > 3072) {
+                if (batch_index_count > 0) {
+                    Hyena_DrawIndexedTriangles(decal_vertices, batch_vertex_count, decal_indices, batch_index_count, true);
+                    batch_vertex_count = 0;
+                    batch_index_count  = 0;
+                }
+                if (batch_texture != p->texture) {
+                    Hyena_BindTexture(p->texture);
+                    batch_texture = p->texture;
+                }
+            }
+
+            base_vertex = (unsigned short) batch_vertex_count;
+            for (i = 0; i < p->vertexCount; ++i) {
+                hyena_colored_vertex_t * dst = &decal_vertices[batch_vertex_count++];
+                dst->xyz[0]   = p->vertexArray[i][0];
+                dst->xyz[1]   = p->vertexArray[i][1];
+                dst->xyz[2]   = p->vertexArray[i][2];
+                dst->uv[0]    = p->texcoordArray[i][0];
+                dst->uv[1]    = p->texcoordArray[i][1];
+                dst->color[0] = cb;
+                dst->color[1] = cb;
+                dst->color[2] = cb;
+                dst->color[3] = ab;
+            }
+            for (i = 0; i < p->triangleCount; ++i) {
+                decal_indices[batch_index_count++] = base_vertex + (unsigned short) p->triangleArray[i][0];
+                decal_indices[batch_index_count++] = base_vertex + (unsigned short) p->triangleArray[i][1];
+                decal_indices[batch_index_count++] = base_vertex + (unsigned short) p->triangleArray[i][2];
+            }
+        }
+#else
         Hyena_BindTexture(p->texture);
         Hyena_SetColor(dcolor, dcolor, dcolor, alpha);
 
-#ifdef PLATFORM_WII
-        /* Each fan contained exactly one triangle. Preserve the original
-         * triangle/vertex order and decal blend state, but submit one triangle
-         * list per decal instead of allocating and drawing each triangle.
-         * The SDL Hyena backend owns and frees this allocation after drawing. */
-        if (p->triangleCount > 0) {
-            int vertex_count = p->triangleCount * 3;
-            vertex_t * vertices;
-            Hyena_BeginVertices(HYE_TRIANGLES);
-            vertices = Hyena_AllocateMemoryForVertices(vertex_count);
-            if (!vertices)
-                Sys_Error("R_DrawDecals: out of memory");
-            for (i = 0; i < p->triangleCount; ++i) {
-                for (v = 0; v < 3; ++v) {
-                    int index = p->triangleArray[i][v];
-                    vertex_t * vertex = &vertices[i * 3 + v];
-                    Hyena_2DTextureCoord(vertex,
-                      p->texcoordArray[index][0], p->texcoordArray[index][1]);
-                    Hyena_VertexXYZ(vertex,
-                      p->vertexArray[index][0], p->vertexArray[index][1], p->vertexArray[index][2]);
-                }
-            }
-            Hyena_DrawVertices(vertices, vertex_count, HYE_TEXTURE_32BITFLOAT, HYE_VERTEX_32BITFLOAT);
-            Hyena_EndVertices();
-        }
-#else
         for (i = 0; i < p->triangleCount; ++i) {
             vertex_t * vertices;
             Hyena_BeginVertices(HYE_TRIANGLE_FAN);
@@ -625,6 +653,12 @@ R_DrawDecals(void)
         }
 #endif
     }
+
+#ifdef PLATFORM_WII
+    if (batch_index_count > 0)
+        Hyena_DrawIndexedTriangles(decal_vertices, batch_vertex_count, decal_indices, batch_index_count, true);
+    (void) v;
+#endif
 
     Hyena_SetDepthOffset(0.0f);
     Hyena_DisableCapability(HYE_BLEND);
